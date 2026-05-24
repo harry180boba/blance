@@ -236,6 +236,36 @@ body{background:var(--bg3);font-family:-apple-system,BlinkMacSystemFont,'Helveti
 .atype-btn span{font-size:11px;color:var(--text2)}
 .atype-btn .atico{font-size:20px}
 
+/* LEDGER SCREEN */
+.ledger-search{padding:10px 14px 6px;display:flex;gap:8px}
+.ledger-search input{flex:1;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-md);padding:9px 13px;font-size:14px;color:var(--text);outline:none;font-family:inherit}
+.ledger-search input:focus{border-color:var(--blue)}
+.lfilter-bar{display:flex;gap:5px;padding:0 14px 8px;overflow-x:auto;scrollbar-width:none;flex-wrap:nowrap}
+.lfilter-bar::-webkit-scrollbar{display:none}
+.lfb{padding:5px 11px;border-radius:20px;border:0.5px solid var(--border2);background:none;font-size:12px;cursor:pointer;color:var(--text2);font-family:inherit;white-space:nowrap;flex-shrink:0;transition:all .15s}
+.lfb.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+
+/* TX DETAIL MODAL */
+.txd-amount{font-size:32px;font-weight:700;text-align:center;padding:12px 0 16px}
+.txd-row{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:0.5px solid var(--border)}
+.txd-row:last-child{border-bottom:none}
+.txd-label{font-size:12px;color:var(--text3)}
+.txd-value{font-size:14px;font-weight:500;color:var(--text);text-align:right;max-width:65%;word-break:break-all}
+.mform-del-full{width:100%;margin-top:14px;padding:12px;border:none;border-radius:var(--r-md);background:var(--red-bg);color:var(--red-mid);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}
+
+/* MANAGE TAGS */
+.tag-manage-item{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;background:var(--bg2);border-radius:var(--r-md);margin-bottom:6px}
+.tag-manage-del{background:none;border:none;cursor:pointer;color:var(--red-mid);font-size:20px;padding:2px 6px;line-height:1}
+.tag-add-row{display:flex;gap:7px;margin-top:10px}
+.tag-add-row input{flex:1;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-md);padding:9px 12px;font-size:14px;color:var(--text);font-family:inherit;outline:none}
+.tag-add-row input:focus{border-color:var(--blue)}
+.tag-add-row button{padding:0 16px;border:none;border-radius:var(--r-md);background:var(--blue);color:#fff;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}
+
+/* GUEST MODE */
+.auth-or{text-align:center;font-size:12px;color:var(--text3);padding:8px 0}
+.auth-guest-btn{background:none;border:0.5px solid var(--border2);border-radius:var(--r-md);padding:13px;font-size:14px;color:var(--text2);cursor:pointer;font-family:inherit;width:100%}
+.auth-guest-btn:hover{background:var(--bg2)}
+
 /* LOADING / TOAST */
 .loading-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;z-index:900}
 .loading-box{background:var(--bg);border-radius:var(--r-lg);padding:24px 32px;text-align:center;font-size:14px;color:var(--text2)}
@@ -263,6 +293,8 @@ body{background:var(--bg3);font-family:-apple-system,BlinkMacSystemFont,'Helveti
         <input class="auth-input" type="password" id="auth-pw" placeholder="密碼（至少6位）" autocomplete="current-password">
         <div class="auth-err" id="auth-err"></div>
         <button class="auth-btn" id="auth-submit-btn" onclick="doAuth()">登入</button>
+        <div class="auth-or">── 或 ──</div>
+        <button class="auth-guest-btn" onclick="enterGuestMode()">訪客模式（資料存本機）</button>
       </div>
     </div>
   </div>
@@ -299,8 +331,23 @@ body{background:var(--bg3);font-family:-apple-system,BlinkMacSystemFont,'Helveti
     </div>
     <div class="bnav">
       <button class="nb on" onclick="go('home')"><i class="ti ti-home"></i>首頁</button>
+      <button class="nb" onclick="go('ledger')"><i class="ti ti-receipt"></i>明細</button>
       <button class="nb" onclick="go('cal')"><i class="ti ti-calendar"></i>月曆</button>
-      <button class="nb" onclick="go('cal')"><div class="fab"><i class="ti ti-plus" style="color:#fff;font-size:22px"></i></div></button>
+      <button class="nb" onclick="go('chart')"><i class="ti ti-chart-pie"></i>統計</button>
+      <button class="nb" onclick="go('settings')"><i class="ti ti-settings"></i>設定</button>
+    </div>
+  </div>
+
+  <!-- LEDGER -->
+  <div class="screen" id="sc-ledger">
+    <div class="hdr"><div class="hdr-row"><h2>所有明細</h2></div></div>
+    <div class="ledger-search"><input type="text" id="ledger-q" placeholder="🔍 搜尋備註、分類…" oninput="renderLedger()"></div>
+    <div class="lfilter-bar" id="lfilter-bar"></div>
+    <div class="scroll" id="ledger-list" style="padding:0 12px 80px"></div>
+    <div class="bnav">
+      <button class="nb" onclick="go('home')"><i class="ti ti-home"></i>首頁</button>
+      <button class="nb on" onclick="go('ledger')"><i class="ti ti-receipt"></i>明細</button>
+      <button class="nb" onclick="go('cal')"><i class="ti ti-calendar"></i>月曆</button>
       <button class="nb" onclick="go('chart')"><i class="ti ti-chart-pie"></i>統計</button>
       <button class="nb" onclick="go('settings')"><i class="ti ti-settings"></i>設定</button>
     </div>
@@ -333,8 +380,8 @@ body{background:var(--bg3);font-family:-apple-system,BlinkMacSystemFont,'Helveti
     <div class="txp" id="txp"></div>
     <div class="bnav">
       <button class="nb" onclick="go('home')"><i class="ti ti-home"></i>首頁</button>
+      <button class="nb" onclick="go('ledger')"><i class="ti ti-receipt"></i>明細</button>
       <button class="nb on" onclick="go('cal')"><i class="ti ti-calendar"></i>月曆</button>
-      <button class="nb" onclick="go('add')"><div class="fab"><i class="ti ti-plus" style="color:#fff;font-size:22px"></i></div></button>
       <button class="nb" onclick="go('chart')"><i class="ti ti-chart-pie"></i>統計</button>
       <button class="nb" onclick="go('settings')"><i class="ti ti-settings"></i>設定</button>
     </div>
@@ -379,8 +426,8 @@ body{background:var(--bg3);font-family:-apple-system,BlinkMacSystemFont,'Helveti
     </div>
     <div class="bnav">
       <button class="nb" onclick="go('home')"><i class="ti ti-home"></i>首頁</button>
+      <button class="nb" onclick="go('ledger')"><i class="ti ti-receipt"></i>明細</button>
       <button class="nb" onclick="go('cal')"><i class="ti ti-calendar"></i>月曆</button>
-      <button class="nb on"><div class="fab"><i class="ti ti-plus" style="color:#fff;font-size:22px"></i></div></button>
       <button class="nb" onclick="go('chart')"><i class="ti ti-chart-pie"></i>統計</button>
       <button class="nb" onclick="go('settings')"><i class="ti ti-settings"></i>設定</button>
     </div>
@@ -403,8 +450,8 @@ body{background:var(--bg3);font-family:-apple-system,BlinkMacSystemFont,'Helveti
     <div class="scroll" style="padding:10px 15px 80px" id="chart-content"></div>
     <div class="bnav">
       <button class="nb" onclick="go('home')"><i class="ti ti-home"></i>首頁</button>
+      <button class="nb" onclick="go('ledger')"><i class="ti ti-receipt"></i>明細</button>
       <button class="nb" onclick="go('cal')"><i class="ti ti-calendar"></i>月曆</button>
-      <button class="nb" onclick="go('add')"><div class="fab"><i class="ti ti-plus" style="color:#fff;font-size:22px"></i></div></button>
       <button class="nb on"><i class="ti ti-chart-pie"></i>統計</button>
       <button class="nb" onclick="go('settings')"><i class="ti ti-settings"></i>設定</button>
     </div>
@@ -419,7 +466,21 @@ body{background:var(--bg3);font-family:-apple-system,BlinkMacSystemFont,'Helveti
         <div class="setting-row-left"><i class="ti ti-user"></i><span id="user-email-display">—</span></div>
       </div>
       <div class="setting-row" onclick="doLogout()">
-        <div class="setting-row-left"><i class="ti ti-logout" style="color:var(--red)"></i><span style="color:var(--red)">登出</span></div>
+        <div class="setting-row-left"><i class="ti ti-logout" style="color:var(--red)"></i><span style="color:var(--red)">登出 / 切換模式</span></div>
+        <i class="ti ti-chevron-right" style="color:var(--text3)"></i>
+      </div>
+      <div class="setting-section-label" style="margin-top:16px">帳戶</div>
+      <div class="setting-row" onclick="openManageAccts()">
+        <div class="setting-row-left"><i class="ti ti-building-bank" style="color:var(--blue)"></i>管理帳戶</div>
+        <i class="ti ti-chevron-right" style="color:var(--text3)"></i>
+      </div>
+      <div class="setting-row" onclick="openAddAcct()">
+        <div class="setting-row-left"><i class="ti ti-plus" style="color:var(--green)"></i>新增帳戶</div>
+        <i class="ti ti-chevron-right" style="color:var(--text3)"></i>
+      </div>
+      <div class="setting-section-label" style="margin-top:16px">標籤</div>
+      <div class="setting-row" onclick="openManageTags()">
+        <div class="setting-row-left"><i class="ti ti-hash" style="color:var(--amber)"></i>管理 Tags</div>
         <i class="ti ti-chevron-right" style="color:var(--text3)"></i>
       </div>
       <div class="setting-section-label" style="margin-top:16px">匯出資料</div>
@@ -444,8 +505,8 @@ body{background:var(--bg3);font-family:-apple-system,BlinkMacSystemFont,'Helveti
     </div>
     <div class="bnav">
       <button class="nb" onclick="go('home')"><i class="ti ti-home"></i>首頁</button>
+      <button class="nb" onclick="go('ledger')"><i class="ti ti-receipt"></i>明細</button>
       <button class="nb" onclick="go('cal')"><i class="ti ti-calendar"></i>月曆</button>
-      <button class="nb" onclick="go('add')"><div class="fab"><i class="ti ti-plus" style="color:#fff;font-size:22px"></i></div></button>
       <button class="nb" onclick="go('chart')"><i class="ti ti-chart-pie"></i>統計</button>
       <button class="nb on"><i class="ti ti-settings"></i>設定</button>
     </div>
@@ -485,7 +546,21 @@ function cmap(t){const m={};(t==='expense'?ECATS:ICATS).forEach(c=>m[c.id]=c);re
 
 /* ── STATE ── */
 let currentUser=null;
-let txs=[],accounts=[];
+let guestMode=false;
+let txs=[],accounts=[],globalTags=[];
+let ledgerAcctFilter=null,ledgerTagFilter=null;
+let detailTxId=null;
+
+/* ── INDEXEDDB ── */
+let idb=null;
+function openIDB(){return new Promise((res,rej)=>{const r=indexedDB.open('moze_idb',1);r.onupgradeneeded=e=>{const d=e.target.result;if(!d.objectStoreNames.contains('accounts'))d.createObjectStore('accounts',{keyPath:'id'});if(!d.objectStoreNames.contains('transactions'))d.createObjectStore('transactions',{keyPath:'id'});if(!d.objectStoreNames.contains('meta'))d.createObjectStore('meta',{keyPath:'key'});};r.onsuccess=e=>{idb=e.target.result;res(idb);};r.onerror=()=>rej(r.error);});}
+function idbAll(store){return new Promise((res,rej)=>{const t=idb.transaction(store,'readonly');const r=t.objectStore(store).getAll();r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});}
+function idbPut(store,obj){return new Promise((res,rej)=>{const t=idb.transaction(store,'readwrite');const r=t.objectStore(store).put(obj);r.onsuccess=()=>res();r.onerror=()=>rej(r.error);});}
+function idbDel(store,id){return new Promise((res,rej)=>{const t=idb.transaction(store,'readwrite');const r=t.objectStore(store).delete(id);r.onsuccess=()=>res();r.onerror=()=>rej(r.error);});}
+function genId(){return 'g'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
+async function saveGlobalTags(){if(guestMode&&idb)await idbPut('meta',{key:'globalTags',value:globalTags});}
+
+/* ── UTILS (extra) ── */
 let curY=new Date().getFullYear(),curM=new Date().getMonth();
 let chartY=curY,chartM=curM;
 let selDate=null,curType='expense',selCat='food',curPeriod='month';
@@ -532,28 +607,68 @@ async function doAuth(){
   }catch(e){errEl.style.color='var(--red-mid)';errEl.textContent=e.message||'發生錯誤';}
   finally{btn.disabled=false;btn.textContent=authMode==='login'?'登入':'註冊帳號';}
 }
-async function onLogin(){showLoading('同步中…');await loadAllData();hideLoading();document.getElementById('user-email-display').textContent=currentUser.email;go('home');}
-async function doLogout(){if(!confirm('確定登出？'))return;await sb.auth.signOut();currentUser=null;txs=[];accounts=[];go('auth');}
+async function onLogin(){showLoading('同步中…');await loadAllData();hideLoading();document.getElementById('user-email-display').textContent=currentUser.email||'已登入';go('home');}
+async function doLogout(){
+  if(!confirm('確定登出 / 切換模式？'))return;
+  if(!guestMode){try{await sb.auth.signOut();}catch(e){}}
+  currentUser=null;guestMode=false;txs=[];accounts=[];globalTags=[];
+  document.getElementById('user-email-display').textContent='—';
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById('sc-auth').classList.add('active');
+}
+async function enterGuestMode(){
+  guestMode=true;currentUser=null;
+  document.getElementById('user-email-display').textContent='訪客模式（本機）';
+  showLoading('載入中…');await loadAllData();hideLoading();go('home');
+}
 
 /* ── DB ── */
 async function loadAllData(){
-  const[acRes,txRes]=await Promise.all([
-    sb.from('accounts').select('*').order('created_at'),
-    sb.from('transactions').select('*').order('date',{ascending:false})
-  ]);
-  accounts=acRes.data||[];txs=txRes.data||[];
+  if(guestMode){
+    accounts=await idbAll('accounts');
+    txs=await idbAll('transactions');
+    txs.sort((a,b)=>b.date.localeCompare(a.date));
+    const meta=await idbAll('meta');
+    const tm=meta.find(m=>m.key==='globalTags');
+    globalTags=tm?tm.value:[];
+    // also collect tags from existing txs
+    const tagSet=new Set(globalTags);txs.forEach(t=>(t.tags||[]).forEach(tg=>tagSet.add(tg)));globalTags=[...tagSet];
+  } else {
+    const[acRes,txRes]=await Promise.all([
+      sb.from('accounts').select('*').order('created_at'),
+      sb.from('transactions').select('*').order('date',{ascending:false})
+    ]);
+    accounts=acRes.data||[];txs=txRes.data||[];
+    const tagSet=new Set();txs.forEach(t=>(t.tags||[]).forEach(tg=>tagSet.add(tg)));globalTags=[...tagSet];
+  }
 }
-async function dbAddAccount(a){showLoading('新增中…');const{data,error}=await sb.from('accounts').insert({user_id:currentUser.id,...a}).select().single();hideLoading();if(error){toast('失敗:'+error.message);return null;}accounts.push(data);return data;}
-async function dbUpdateAccount(id,ch){const{error}=await sb.from('accounts').update(ch).eq('id',id);if(error){toast('更新失敗');return false;}const a=accounts.find(x=>x.id===id);if(a)Object.assign(a,ch);return true;}
-async function dbDeleteAccount(id){const{error}=await sb.from('accounts').delete().eq('id',id);if(error){toast('刪除失敗');return false;}accounts=accounts.filter(a=>a.id!==id);return true;}
-async function dbAddTx(tx){showLoading('儲存中…');const{data,error}=await sb.from('transactions').insert({user_id:currentUser.id,...tx}).select().single();hideLoading();if(error){toast('儲存失敗:'+error.message);return null;}txs.unshift(data);return data;}
-async function dbDeleteTx(id){const{error}=await sb.from('transactions').delete().eq('id',id);if(error){toast('刪除失敗');return false;}txs=txs.filter(t=>t.id!==id);return true;}
+async function dbAddAccount(a){
+  if(guestMode){const obj={id:genId(),...a};await idbPut('accounts',obj);accounts.push(obj);return obj;}
+  showLoading('新增中…');const{data,error}=await sb.from('accounts').insert({user_id:currentUser.id,...a}).select().single();hideLoading();if(error){toast('失敗:'+error.message);return null;}accounts.push(data);return data;
+}
+async function dbUpdateAccount(id,ch){
+  if(guestMode){const a=accounts.find(x=>x.id===id);if(a){Object.assign(a,ch);await idbPut('accounts',a);}return true;}
+  const{error}=await sb.from('accounts').update(ch).eq('id',id);if(error){toast('更新失敗');return false;}const a=accounts.find(x=>x.id===id);if(a)Object.assign(a,ch);return true;
+}
+async function dbDeleteAccount(id){
+  if(guestMode){await idbDel('accounts',id);accounts=accounts.filter(a=>a.id!==id);return true;}
+  const{error}=await sb.from('accounts').delete().eq('id',id);if(error){toast('刪除失敗');return false;}accounts=accounts.filter(a=>a.id!==id);return true;
+}
+async function dbAddTx(tx){
+  if(guestMode){const obj={id:genId(),...tx,created_at:new Date().toISOString()};await idbPut('transactions',obj);txs.unshift(obj);return obj;}
+  showLoading('儲存中…');const{data,error}=await sb.from('transactions').insert({user_id:currentUser.id,...tx}).select().single();hideLoading();if(error){toast('儲存失敗:'+error.message);return null;}txs.unshift(data);return data;
+}
+async function dbDeleteTx(id){
+  if(guestMode){await idbDel('transactions',id);txs=txs.filter(t=>t.id!==id);return true;}
+  const{error}=await sb.from('transactions').delete().eq('id',id);if(error){toast('刪除失敗');return false;}txs=txs.filter(t=>t.id!==id);return true;
+}
 
 /* ── ROUTER ── */
 function go(sc){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('sc-'+sc).classList.add('active');
   if(sc==='home')renderHome();
+  if(sc==='ledger')renderLedger();
   if(sc==='cal')renderCal();
   if(sc==='add')initAdd();
   if(sc==='chart'){chartY=curY;chartM=curM;renderChart();}
@@ -774,13 +889,39 @@ function renderTxPanel(){
 }
 function fmtDay(d){const dt=new Date(d+'T00:00:00');return (dt.getMonth()+1)+'月'+dt.getDate()+'日 週'+['日','一','二','三','四','五','六'][dt.getDay()];}
 
-async function confirmDelTx(id){
-  if(!confirm('刪除這筆記錄？'))return;
+function confirmDelTx(id){openTxDetail(id);}
+
+/* ── TX DETAIL MODAL ── */
+function openTxDetail(id){
+  detailTxId=id;
+  const t=txs.find(x=>x.id===id);if(!t)return;
+  const cm=cmap('expense'),ci=cmap('income');
+  const cat=t.type==='expense'?(cm[t.category]||{icon:'💰',name:'其他'}):(ci[t.category]||{icon:'💰',name:'其他'});
+  const acct=accounts.find(a=>a.id===t.acct_id);const atyp=acct?at(acct.type):null;
+  const color=t.type==='income'?'var(--green)':'var(--red)';
+  let h='<div class="txd-amount" style="color:'+color+'">'+(t.type==='income'?'+':'-')+'NT$'+fmt(Number(t.amount))+'</div>';
+  h+='<div class="txd-row"><span class="txd-label">類型</span><span class="txd-value">'+(t.type==='expense'?'支出':'收入')+'</span></div>';
+  h+='<div class="txd-row"><span class="txd-label">分類</span><span class="txd-value">'+cat.icon+' '+cat.name+'</span></div>';
+  h+='<div class="txd-row"><span class="txd-label">帳戶</span><span class="txd-value">'+(atyp?atyp.icon:'')+' '+(acct?acct.name:'—')+'</span></div>';
+  h+='<div class="txd-row"><span class="txd-label">日期</span><span class="txd-value">'+t.date+'</span></div>';
+  if(t.note)h+='<div class="txd-row"><span class="txd-label">備註</span><span class="txd-value">'+t.note+'</span></div>';
+  const tags=t.tags||[];
+  if(tags.length)h+='<div class="txd-row"><span class="txd-label">Tags</span><span class="txd-value">'+tags.map(tg=>'<span class="tag-pill">#'+tg+'</span>').join(' ')+'</span></div>';
+  h+='<button class="mform-del-full" onclick="doDeleteTx()">🗑 刪除這筆交易</button>';
+  showModal('<div class="modal-title">'+cat.icon+' 交易詳情</div>'+h);
+}
+async function doDeleteTx(){
+  if(!detailTxId||!confirm('確定刪除？'))return;
   showLoading('刪除中…');
-  const t=txs.find(x=>x.id===id);
+  const t=txs.find(x=>x.id===detailTxId);
   if(t&&t.acct_id){const acct=accounts.find(a=>a.id===t.acct_id);if(acct){const nb=t.type==='income'?Number(acct.balance)-Number(t.amount):Number(acct.balance)+Number(t.amount);await dbUpdateAccount(t.acct_id,{balance:nb});}}
-  const ok=await dbDeleteTx(id);hideLoading();
-  if(ok){renderCal();renderHome();toast('已刪除');}
+  const ok=await dbDeleteTx(detailTxId);hideLoading();
+  if(ok){
+    closeModal();
+    renderCal();renderHome();
+    if(document.getElementById('sc-ledger').classList.contains('active'))renderLedger();
+    toast('已刪除');
+  }
 }
 
 /* Swipe */
@@ -908,11 +1049,6 @@ async function saveTx(){
 /* ── CHART ── */
 function chartChg(d){const o=offM(chartY,chartM,d);chartY=o.y;chartM=o.m;renderChart();}
 
-/* ⑧ 取得所有 tag */
-function getAllTags(){
-  const set=new Set();txs.forEach(t=>(t.tags||[]).forEach(tg=>set.add(tg)));return [...set].sort();
-}
-
 function renderChartFilterBar(){
   const bar=document.getElementById('chart-filter-bar');
   const allTags=getAllTags();
@@ -1003,15 +1139,20 @@ function exportCSV(){
   }).join('\n');
   const d=new Date();downloadFile('\uFEFF'+header+rows,'記帳本_'+d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+'.csv','text/csv;charset=utf-8');toast('CSV 已匯出 ✓');
 }
-function exportJSON(){const d=new Date();downloadFile(JSON.stringify({exportedAt:new Date().toISOString(),user:currentUser.email,accounts,transactions:txs},null,2),'記帳本備份_'+d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+'.json','application/json');toast('JSON 已匯出 ✓');}
+function exportJSON(){const d=new Date();const usr=guestMode?'guest':(currentUser?currentUser.email:'');downloadFile(JSON.stringify({exportedAt:new Date().toISOString(),user:usr,accounts,transactions:txs},null,2),'記帳本備份_'+d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+'.json','application/json');toast('JSON 已匯出 ✓');}
 function importJSON(){document.getElementById('import-file').click();}
 async function handleImport(e){
   const file=e.target.files[0];if(!file)return;
   try{const text=await file.text();const data=JSON.parse(text);if(!data.transactions&&!data.accounts){toast('格式不正確');return;}
   if(!confirm('匯入 '+(data.transactions?.length||0)+' 筆交易？'))return;
   showLoading('匯入中…');
-  if(data.accounts?.length)for(const a of data.accounts)await sb.from('accounts').upsert({id:a.id,user_id:currentUser.id,type:a.type,name:a.name,balance:a.balance});
-  if(data.transactions?.length)for(const t of data.transactions)await sb.from('transactions').upsert({id:t.id,user_id:currentUser.id,acct_id:t.acct_id||null,type:t.type,amount:t.amount,category:t.category,note:t.note||'',date:t.date,tags:t.tags||[]});
+  if(guestMode){
+    if(data.accounts?.length)for(const a of data.accounts)await idbPut('accounts',a);
+    if(data.transactions?.length)for(const t of data.transactions)await idbPut('transactions',t);
+  } else {
+    if(data.accounts?.length)for(const a of data.accounts)await sb.from('accounts').upsert({id:a.id,user_id:currentUser.id,type:a.type,name:a.name,balance:a.balance});
+    if(data.transactions?.length)for(const t of data.transactions)await sb.from('transactions').upsert({id:t.id,user_id:currentUser.id,acct_id:t.acct_id||null,type:t.type,amount:t.amount,category:t.category,note:t.note||'',date:t.date,tags:t.tags||[]});
+  }
   await loadAllData();hideLoading();toast('匯入完成 ✓');go('home');
   }catch(err){hideLoading();toast('匯入失敗:'+err.message);}
   e.target.value='';
@@ -1019,11 +1160,13 @@ async function handleImport(e){
 
 /* ── SAMPLE DATA ── */
 async function loadSample(){
-  if(!accounts.length){toast('請先新增帳戶');return;}
-  if(!confirm('載入範例資料？'))return;
+  if(!confirm('載入範例資料（會自動建立帳戶）？'))return;
   showLoading('載入中…');
   const y=curY,m=pad(curM+1),prev=offM(y,curM,-1),pmy=prev.y,pmm=pad(prev.m+1);
-  const a0=accounts[0]?.id,a1=accounts[1]?.id||a0,a2=accounts[2]?.id||a0;
+  let a0=accounts[0]?.id,a1=accounts[1]?.id,a2=accounts[2]?.id;
+  if(!a0){const r=await dbAddAccount({type:'cash',name:'現金',balance:5000});a0=r?.id;}
+  if(!a1){const r=await dbAddAccount({type:'bank',name:'玉山銀行',balance:85000});a1=r?.id||a0;}
+  if(!a2){const r=await dbAddAccount({type:'credit',name:'台新信用卡',balance:-12000});a2=r?.id||a0;}
   const samples=[
     {type:'expense',amount:280,category:'food',date:y+'-'+m+'-01',note:'早午餐',acct_id:a0,tags:['午餐']},
     {type:'expense',amount:1200,category:'shopping',date:y+'-'+m+'-03',note:'超市採購',acct_id:a1,tags:['生活']},
@@ -1040,14 +1183,84 @@ async function loadSample(){
     {type:'expense',amount:15000,category:'shopping',date:pmy+'-'+pmm+'-10',note:'季節採購',acct_id:a2,tags:[]},
     {type:'income',amount:5000,category:'freelance',date:pmy+'-'+pmm+'-20',note:'接案',acct_id:a1,tags:['接案']},
   ];
-  for(const s of samples)await sb.from('transactions').insert({user_id:currentUser.id,...s});
+  for(const s of samples)await dbAddTx(s);
   await loadAllData();hideLoading();toast('範例資料已載入 ✓');go('home');
+}
+
+/* ── LEDGER ── */
+function getAllTags(){const set=new Set(globalTags);txs.forEach(t=>(t.tags||[]).forEach(tg=>set.add(tg)));return [...set].sort();}
+function renderLedger(){
+  const bar=document.getElementById('lfilter-bar');
+  bar.innerHTML='';
+  const mk=(cls,txt,onclick)=>{const b=document.createElement('button');b.className='lfb'+cls;b.textContent=txt;b.onclick=onclick;bar.appendChild(b);};
+  mk(ledgerAcctFilter===null&&ledgerTagFilter===null?' on':'','全部',()=>{ledgerAcctFilter=null;ledgerTagFilter=null;renderLedger();});
+  accounts.forEach(a=>mk(ledgerAcctFilter===a.id?' on':'',at(a.type).icon+' '+a.name,()=>{ledgerAcctFilter=a.id;ledgerTagFilter=null;renderLedger();}));
+  getAllTags().forEach(tg=>mk(ledgerTagFilter===tg?' on':'','#'+tg,()=>{ledgerTagFilter=tg;ledgerAcctFilter=null;renderLedger();}));
+  const q=(document.getElementById('ledger-q').value||'').toLowerCase();
+  let list=[...txs];
+  if(ledgerAcctFilter)list=list.filter(t=>t.acct_id===ledgerAcctFilter);
+  if(ledgerTagFilter)list=list.filter(t=>(t.tags||[]).includes(ledgerTagFilter));
+  if(q)list=list.filter(t=>(t.note||'').toLowerCase().includes(q)||(t.category||'').toLowerCase().includes(q));
+  list.sort((a,b)=>b.date.localeCompare(a.date));
+  const container=document.getElementById('ledger-list');
+  if(!list.length){container.innerHTML='<div class="empty">尚無符合的交易<br>📋</div>';return;}
+  const grp={};list.forEach(t=>{if(!grp[t.date])grp[t.date]=[];grp[t.date].push(t);});
+  const cm=cmap('expense'),ci=cmap('income');
+  let h='';
+  Object.keys(grp).sort((a,b)=>b.localeCompare(a)).forEach(date=>{
+    const items=grp[date];
+    const de=items.filter(t=>t.type==='expense').reduce((a,t)=>a+Number(t.amount),0);
+    const di=items.filter(t=>t.type==='income').reduce((a,t)=>a+Number(t.amount),0);
+    const dt=new Date(date+'T00:00:00');
+    const p2=[];if(di>0)p2.push('<span style="color:var(--green)">+'+fmt(di)+'</span>');if(de>0)p2.push('<span style="color:var(--red)">-'+fmt(de)+'</span>');
+    h+='<div class="tx-dh"><span class="dl">'+(dt.getMonth()+1)+'/'+dt.getDate()+' 週'+'日一二三四五六'[dt.getDay()]+'</span><span class="ds">'+p2.join(' ')+'</span></div>';
+    items.forEach(t=>{
+      const cat=t.type==='expense'?(cm[t.category]||{icon:'💰',name:'其他'}):(ci[t.category]||{icon:'💰',name:'其他'});
+      const acct=accounts.find(a=>a.id===t.acct_id);const atyp=acct?at(acct.type):null;
+      const tags=t.tags||[];const tagHTML=tags.map(tg=>'<span class="tag-pill">#'+tg+'</span>').join('');
+      h+='<div class="txi" onclick="openTxDetail(''+t.id+'')">'+
+        '<div class="txi-ic" style="background:'+(t.type==='income'?'var(--green-bg)':'var(--red-bg)')+'">'+cat.icon+'</div>'+
+        '<div class="txi-info"><div class="txi-name">'+(t.note||cat.name)+'</div>'+
+        '<div class="txi-sub">'+cat.name+(acct?' · '+(atyp?atyp.icon:'')+' '+acct.name:'')+(tagHTML?' '+tagHTML:'')+'</div></div>'+
+        '<div class="txi-amt '+(t.type==='income'?'i':'e')+'">'+(t.type==='income'?'+':'-')+fmt(Number(t.amount))+'</div></div>';
+    });
+  });
+  container.innerHTML=h;
+}
+
+/* ── MANAGE TAGS ── */
+function openManageTags(){
+  const all=getAllTags();
+  let h='<div class="modal-title">管理 Tags</div>';
+  if(!all.length)h+='<div style="text-align:center;color:var(--text3);padding:16px;font-size:13px">尚無標籤</div>';
+  all.forEach(tg=>{h+='<div class="tag-manage-item"><span style="font-size:14px"># '+tg+'</span><button class="tag-manage-del" onclick="deleteGlobalTag(''+tg+'')">×</button></div>';});
+  h+='<div class="tag-add-row"><input type="text" id="new-tag-inp" placeholder="新標籤名稱"><button onclick="addGlobalTagFromInput()">新增</button></div>';
+  showModal(h);
+}
+async function addGlobalTagFromInput(){
+  const v=(document.getElementById('new-tag-inp')||{}).value?.trim();
+  if(!v){toast('請輸入標籤名稱');return;}
+  if(!globalTags.includes(v))globalTags.push(v);
+  await saveGlobalTags();openManageTags();toast('已新增標籤');
+}
+async function deleteGlobalTag(tag){
+  globalTags=globalTags.filter(t=>t!==tag);
+  await saveGlobalTags();openManageTags();toast('已刪除標籤');
 }
 
 /* ── BOOT ── */
 (async()=>{
-  const{data:{session}}=await sb.auth.getSession();
-  if(session){currentUser=session.user;await onLogin();}
+  await openIDB();
+  // Try Supabase session first
+  try{
+    const{data:{session}}=await sb.auth.getSession();
+    if(session){currentUser=session.user;await onLogin();return;}
+  }catch(e){}
+  // Check for existing local (guest) data
+  const saved=await idbAll('accounts');
+  if(saved.length){await enterGuestMode();return;}
+  // Show auth screen
+  document.getElementById('sc-auth').classList.add('active');
   sb.auth.onAuthStateChange(async(event,session)=>{if(event==='SIGNED_IN'&&session)currentUser=session.user;});
 })();
 </script>

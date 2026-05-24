@@ -1197,62 +1197,76 @@ function getAllTags(){const set=new Set(globalTags);txs.forEach(t=>(t.tags||[]).
 function renderLedger(){
   const bar=document.getElementById('lfilter-bar');
   bar.innerHTML='';
-  const mk=(cls,txt,onclick)=>{const b=document.createElement('button');b.className='lfb'+cls;b.textContent=txt;b.onclick=onclick;bar.appendChild(b);};
-  mk(ledgerAcctFilter===null&&ledgerTagFilter===null?' on':'','全部',()=>{ledgerAcctFilter=null;ledgerTagFilter=null;renderLedger();});
-  accounts.forEach(a=>mk(ledgerAcctFilter===a.id?' on':'',at(a.type).icon+' '+a.name,()=>{ledgerAcctFilter=a.id;ledgerTagFilter=null;renderLedger();}));
-  getAllTags().forEach(tg=>mk(ledgerTagFilter===tg?' on':'','#'+tg,()=>{ledgerTagFilter=tg;ledgerAcctFilter=null;renderLedger();}));
+  function mkChip(cls,txt,fn){const b=document.createElement('button');b.className='lfb'+cls;b.textContent=txt;b.onclick=fn;bar.appendChild(b);}
+  mkChip(ledgerAcctFilter===null&&ledgerTagFilter===null?' on':'','全部',function(){ledgerAcctFilter=null;ledgerTagFilter=null;renderLedger();});
+  accounts.forEach(function(a){mkChip(ledgerAcctFilter===a.id?' on':'',at(a.type).icon+' '+a.name,function(){ledgerAcctFilter=a.id;ledgerTagFilter=null;renderLedger();});});
+  getAllTags().forEach(function(tg){mkChip(ledgerTagFilter===tg?' on':'','#'+tg,function(){ledgerTagFilter=tg;ledgerAcctFilter=null;renderLedger();});});
   const q=(document.getElementById('ledger-q').value||'').toLowerCase();
-  let list=[...txs];
-  if(ledgerAcctFilter)list=list.filter(t=>t.acct_id===ledgerAcctFilter);
-  if(ledgerTagFilter)list=list.filter(t=>(t.tags||[]).includes(ledgerTagFilter));
-  if(q)list=list.filter(t=>(t.note||'').toLowerCase().includes(q)||(t.category||'').toLowerCase().includes(q));
-  list.sort((a,b)=>b.date.localeCompare(a.date));
+  let list=txs.slice();
+  if(ledgerAcctFilter)list=list.filter(function(t){return t.acct_id===ledgerAcctFilter;});
+  if(ledgerTagFilter)list=list.filter(function(t){return (t.tags||[]).indexOf(ledgerTagFilter)>-1;});
+  if(q)list=list.filter(function(t){return (t.note||'').toLowerCase().indexOf(q)>-1||(t.category||'').toLowerCase().indexOf(q)>-1;});
+  list.sort(function(a,b){return b.date.localeCompare(a.date);});
   const container=document.getElementById('ledger-list');
+  container.innerHTML='';
   if(!list.length){container.innerHTML='<div class="empty">尚無符合的交易<br>📋</div>';return;}
-  const grp={};list.forEach(t=>{if(!grp[t.date])grp[t.date]=[];grp[t.date].push(t);});
+  const grp={};
+  list.forEach(function(t){if(!grp[t.date])grp[t.date]=[];grp[t.date].push(t);});
   const cm=cmap('expense'),ci=cmap('income');
-  let h='';
-  Object.keys(grp).sort((a,b)=>b.localeCompare(a)).forEach(date=>{
+  Object.keys(grp).sort(function(a,b){return b.localeCompare(a);}).forEach(function(date){
     const items=grp[date];
-    const de=items.filter(t=>t.type==='expense').reduce((a,t)=>a+Number(t.amount),0);
-    const di=items.filter(t=>t.type==='income').reduce((a,t)=>a+Number(t.amount),0);
+    const de=items.filter(function(t){return t.type==='expense';}).reduce(function(s,t){return s+Number(t.amount);},0);
+    const di=items.filter(function(t){return t.type==='income';}).reduce(function(s,t){return s+Number(t.amount);},0);
     const dt=new Date(date+'T00:00:00');
-    const p2=[];if(di>0)p2.push('<span style="color:var(--green)">+'+fmt(di)+'</span>');if(de>0)p2.push('<span style="color:var(--red)">-'+fmt(de)+'</span>');
-    h+='<div class="tx-dh"><span class="dl">'+(dt.getMonth()+1)+'/'+dt.getDate()+' 週'+'日一二三四五六'[dt.getDay()]+'</span><span class="ds">'+p2.join(' ')+'</span></div>';
-    items.forEach(t=>{
+    const dow=['日','一','二','三','四','五','六'][dt.getDay()];
+    const p2=[];
+    if(di>0)p2.push('<span style="color:var(--green)">+'+fmt(di)+'</span>');
+    if(de>0)p2.push('<span style="color:var(--red)">-'+fmt(de)+'</span>');
+    const hdr=document.createElement('div');
+    hdr.className='tx-dh';
+    hdr.innerHTML='<span class="dl">'+(dt.getMonth()+1)+'/'+dt.getDate()+' 週'+dow+'</span><span class="ds">'+p2.join(' ')+'</span>';
+    container.appendChild(hdr);
+    items.forEach(function(t){
       const cat=t.type==='expense'?(cm[t.category]||{icon:'💰',name:'其他'}):(ci[t.category]||{icon:'💰',name:'其他'});
-      const acct=accounts.find(a=>a.id===t.acct_id);const atyp=acct?at(acct.type):null;
-      const tags=t.tags||[];const tagHTML=tags.map(tg=>'<span class="tag-pill">#'+tg+'</span>').join('');
-      h+='<div class="txi" onclick="openTxDetail(''+t.id+'')">'+
-        '<div class="txi-ic" style="background:'+(t.type==='income'?'var(--green-bg)':'var(--red-bg)')+'">'+cat.icon+'</div>'+
+      const acct=accounts.find(function(a){return a.id===t.acct_id;});
+      const atyp=acct?at(acct.type):null;
+      const tags=t.tags||[];
+      const tagHTML=tags.map(function(tg){return '<span class="tag-pill">#'+tg+'</span>';}).join('');
+      const subTxt=cat.name+(acct?' · '+(atyp?atyp.icon:'')+' '+acct.name:'')+(tagHTML?' '+tagHTML:'');
+      const row=document.createElement('div');
+      row.className='txi';
+      row.innerHTML='<div class="txi-ic" style="background:'+(t.type==='income'?'var(--green-bg)':'var(--red-bg)')+'">'+cat.icon+'</div>'+
         '<div class="txi-info"><div class="txi-name">'+(t.note||cat.name)+'</div>'+
-        '<div class="txi-sub">'+cat.name+(acct?' · '+(atyp?atyp.icon:'')+' '+acct.name:'')+(tagHTML?' '+tagHTML:'')+'</div></div>'+
-        '<div class="txi-amt '+(t.type==='income'?'i':'e')+'">'+(t.type==='income'?'+':'-')+fmt(Number(t.amount))+'</div></div>';
+        '<div class="txi-sub">'+subTxt+'</div></div>'+
+        '<div class="txi-amt '+(t.type==='income'?'i':'e')+'">'+(t.type==='income'?'+':'-')+fmt(Number(t.amount))+'</div>';
+      row.onclick=(function(tid){return function(){openTxDetail(tid);};})(t.id);
+      container.appendChild(row);
     });
   });
-  container.innerHTML=h;
 }
-
 /* ── MANAGE TAGS ── */
 function openManageTags(){
   const all=getAllTags();
   let h='<div class="modal-title">管理 Tags</div>';
   if(!all.length)h+='<div style="text-align:center;color:var(--text3);padding:16px;font-size:13px">尚無標籤</div>';
-  all.forEach(tg=>{h+='<div class="tag-manage-item"><span style="font-size:14px"># '+tg+'</span><button class="tag-manage-del" onclick="deleteGlobalTag(''+tg+'')">×</button></div>';});
+  all.forEach(function(tg){
+    h+='<div class="tag-manage-item"><span style="font-size:14px"># '+tg+'</span>'+
+      '<button class="tag-manage-del" data-tag="'+tg.replace(/&/g,'&amp;').replace(/"/g,'&quot;')+'" onclick="deleteGlobalTag(this.dataset.tag)">×</button></div>';
+  });
   h+='<div class="tag-add-row"><input type="text" id="new-tag-inp" placeholder="新標籤名稱"><button onclick="addGlobalTagFromInput()">新增</button></div>';
   showModal(h);
 }
 async function addGlobalTagFromInput(){
-  const v=(document.getElementById('new-tag-inp')||{}).value?.trim();
+  const inp=document.getElementById('new-tag-inp');
+  const v=inp?inp.value.trim():'';
   if(!v){toast('請輸入標籤名稱');return;}
-  if(!globalTags.includes(v))globalTags.push(v);
+  if(globalTags.indexOf(v)===-1)globalTags.push(v);
   await saveGlobalTags();openManageTags();toast('已新增標籤');
 }
 async function deleteGlobalTag(tag){
-  globalTags=globalTags.filter(t=>t!==tag);
+  globalTags=globalTags.filter(function(t){return t!==tag;});
   await saveGlobalTags();openManageTags();toast('已刪除標籤');
 }
-
 /* ── BOOT ── */
 function hideSplash(){const s=document.getElementById('splash');if(s)s.style.display='none';}
 function showAuth(){hideSplash();document.getElementById('sc-auth').classList.add('active');}

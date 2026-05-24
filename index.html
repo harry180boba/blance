@@ -1255,27 +1255,28 @@ async function deleteGlobalTag(tag){
 
 /* ── BOOT ── */
 function hideSplash(){const s=document.getElementById('splash');if(s)s.style.display='none';}
+function showAuth(){hideSplash();document.getElementById('sc-auth').classList.add('active');}
+
+// 安全保險：3秒後若還在 splash 就強制顯示登入頁
+setTimeout(()=>{
+  const s=document.getElementById('splash');
+  if(s&&s.style.display!=='none'){console.warn('Boot timeout, forcing auth screen');showAuth();}
+},3000);
+
 (async()=>{
-  try{
-    await openIDB();
-  }catch(e){
-    hideSplash();
-    document.getElementById('sc-auth').classList.add('active');
-    return;
-  }
-  // Try Supabase session first
+  try{await openIDB();}catch(e){console.error('IDB error',e);showAuth();return;}
+
   try{
     const{data:{session}}=await sb.auth.getSession();
     if(session){currentUser=session.user;hideSplash();await onLogin();return;}
-  }catch(e){}
-  // Check for existing local (guest) data
+  }catch(e){console.warn('Supabase session error',e);}
+
   try{
     const saved=await idbAll('accounts');
     if(saved.length){hideSplash();await enterGuestMode();return;}
-  }catch(e){}
-  // Show auth screen
-  hideSplash();
-  document.getElementById('sc-auth').classList.add('active');
+  }catch(e){console.warn('IDB read error',e);}
+
+  showAuth();
   try{sb.auth.onAuthStateChange(async(event,session)=>{if(event==='SIGNED_IN'&&session)currentUser=session.user;});}catch(e){}
 })();
 </script>

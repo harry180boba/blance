@@ -1254,22 +1254,29 @@ async function deleteGlobalTag(tag){
 }
 
 /* ── BOOT ── */
+function hideSplash(){const s=document.getElementById('splash');if(s)s.style.display='none';}
 (async()=>{
-  // Hide splash once JS is running
-  const splash=document.getElementById('splash');
-  if(splash)splash.style.display='none';
-  await openIDB();
+  try{
+    await openIDB();
+  }catch(e){
+    hideSplash();
+    document.getElementById('sc-auth').classList.add('active');
+    return;
+  }
   // Try Supabase session first
   try{
     const{data:{session}}=await sb.auth.getSession();
-    if(session){currentUser=session.user;await onLogin();return;}
+    if(session){currentUser=session.user;hideSplash();await onLogin();return;}
   }catch(e){}
   // Check for existing local (guest) data
-  const saved=await idbAll('accounts');
-  if(saved.length){await enterGuestMode();return;}
+  try{
+    const saved=await idbAll('accounts');
+    if(saved.length){hideSplash();await enterGuestMode();return;}
+  }catch(e){}
   // Show auth screen
+  hideSplash();
   document.getElementById('sc-auth').classList.add('active');
-  sb.auth.onAuthStateChange(async(event,session)=>{if(event==='SIGNED_IN'&&session)currentUser=session.user;});
+  try{sb.auth.onAuthStateChange(async(event,session)=>{if(event==='SIGNED_IN'&&session)currentUser=session.user;});}catch(e){}
 })();
 </script>
 </body>

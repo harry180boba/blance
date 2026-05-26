@@ -66,8 +66,9 @@ body{background:var(--bg3);font-family:-apple-system,BlinkMacSystemFont,'Helveti
 .scroll{overflow-y:auto;flex:1;min-height:0;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
 
 /* HOME */
-.net-wrap{padding:20px 16px 10px;text-align:center}
+.net-wrap{padding:20px 16px 10px;display:flex;justify-content:space-between;align-items:flex-start}
 .net-lbl{font-size:12px;color:var(--text3);margin-bottom:4px}
+.year-sel{background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-md);padding:5px 10px;font-size:13px;font-weight:600;color:var(--text);cursor:pointer;font-family:inherit;-webkit-appearance:none;appearance:none;padding-right:24px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239090a0' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 6px center}
 .net-val{font-size:36px;font-weight:700;color:var(--text);letter-spacing:-1px}
 .period-row{display:flex;gap:5px;padding:0 16px 10px}
 .pt{flex:1;padding:6px 0;border:0.5px solid var(--border2);border-radius:var(--r-md);background:none;font-size:12px;cursor:pointer;color:var(--text2);font-family:inherit;transition:all .15s}
@@ -306,7 +307,7 @@ body{background:var(--bg3);font-family:-apple-system,BlinkMacSystemFont,'Helveti
 
   <!-- HOME -->
   <div class="screen" id="sc-home">
-    <div class="hdr">
+    <div class="hdr" style="flex-shrink:0">
       <div class="hdr-row">
         <h2>總覽</h2>
         <button class="icon-btn" onclick="openManageAccts()"><i class="ti ti-settings"></i>帳戶</button>
@@ -314,8 +315,11 @@ body{background:var(--bg3);font-family:-apple-system,BlinkMacSystemFont,'Helveti
     </div>
     <div class="scroll" style="flex:1;min-height:0">
       <div class="net-wrap">
-        <div class="net-lbl">淨資產</div>
-        <div class="net-val" id="net-val">NT$0</div>
+        <div>
+          <div class="net-lbl">淨資產</div>
+          <div class="net-val" id="net-val">NT$0</div>
+        </div>
+        <select class="year-sel" id="home-year-sel" onchange="onYearChange(this.value)"></select>
       </div>
       <div class="period-row">
         <button class="pt" onclick="setPeriod(this,'day')">日</button>
@@ -406,7 +410,7 @@ body{background:var(--bg3);font-family:-apple-system,BlinkMacSystemFont,'Helveti
         <button class="save-btn" onclick="saveTx()">儲存</button>
       </div>
     </div>
-    <div class="scroll">
+    <div class="scroll" style="flex:1;min-height:0">
       <div class="type-sw">
         <button class="tbtn ae" id="tb-e" onclick="setType('expense')">支出</button>
         <button class="tbtn" id="tb-i" onclick="setType('income')">收入</button>
@@ -445,7 +449,7 @@ body{background:var(--bg3);font-family:-apple-system,BlinkMacSystemFont,'Helveti
 
   <!-- CHART -->
   <div class="screen" id="sc-chart">
-    <div class="hdr">
+    <div class="hdr" style="flex-shrink:0">
       <div class="hdr-row">
         <h2>統計</h2>
         <div class="chart-mnav">
@@ -456,7 +460,7 @@ body{background:var(--bg3);font-family:-apple-system,BlinkMacSystemFont,'Helveti
       </div>
     </div>
     <!-- ⑧ filter bar -->
-    <div class="filter-bar" id="chart-filter-bar"></div>
+    <div class="filter-bar" id="chart-filter-bar" style="flex-shrink:0"></div>
     <div class="scroll" style="flex:1;min-height:0;padding:10px 15px 16px" id="chart-content"></div>
     <div class="bnav">
       <button class="nb" onclick="go('home')"><i class="ti ti-home"></i>首頁</button>
@@ -688,11 +692,33 @@ function go(sc){
 }
 
 /* ── HOME ── */
-function renderHome(){
+function renderHome(){populateYearSel();
   document.getElementById('net-val').textContent='NT$'+fmt(accounts.reduce((a,b)=>a+Number(b.balance),0));
   renderTrend();renderAccts();
 }
 
+function populateYearSel(){
+  const sel=document.getElementById('home-year-sel');
+  if(!sel)return;
+  const now=new Date().getFullYear();
+  // get all years from txs
+  const yrs=new Set();
+  yrs.add(now);
+  txs.forEach(function(t){if(t.date)yrs.add(parseInt(t.date.slice(0,4)));});
+  const sorted=[...yrs].sort(function(a,b){return b-a;});
+  sel.innerHTML='';
+  sorted.forEach(function(y){
+    const o=document.createElement('option');
+    o.value=y;o.textContent=y+'年';
+    if(y===curY)o.selected=true;
+    sel.appendChild(o);
+  });
+}
+function onYearChange(val){
+  curY=parseInt(val);
+  renderTrend();
+  renderHome();
+}
 function setPeriod(btn,p){curPeriod=p;document.querySelectorAll('.pt').forEach(b=>b.classList.remove('on'));btn.classList.add('on');renderTrend();}
 
 /* ⑤⑥ 正確週標籤 + y軸 */
@@ -921,21 +947,108 @@ function confirmDelTx(id){openTxDetail(id);}
 /* ── TX DETAIL MODAL ── */
 function openTxDetail(id){
   detailTxId=id;
-  const t=txs.find(x=>x.id===id);if(!t)return;
+  const t=txs.find(function(x){return x.id===id;});if(!t)return;
   const cm=cmap('expense'),ci=cmap('income');
-  const cat=t.type==='expense'?(cm[t.category]||{icon:'💰',name:'其他'}):(ci[t.category]||{icon:'💰',name:'其他'});
-  const acct=accounts.find(a=>a.id===t.acct_id);const atyp=acct?at(acct.type):null;
-  const color=t.type==='income'?'var(--green)':'var(--red)';
-  let h='<div class="txd-amount" style="color:'+color+'">'+(t.type==='income'?'+':'-')+'NT$'+fmt(Number(t.amount))+'</div>';
-  h+='<div class="txd-row"><span class="txd-label">類型</span><span class="txd-value">'+(t.type==='expense'?'支出':'收入')+'</span></div>';
-  h+='<div class="txd-row"><span class="txd-label">分類</span><span class="txd-value">'+cat.icon+' '+cat.name+'</span></div>';
-  h+='<div class="txd-row"><span class="txd-label">帳戶</span><span class="txd-value">'+(atyp?atyp.icon:'')+' '+(acct?acct.name:'—')+'</span></div>';
-  h+='<div class="txd-row"><span class="txd-label">日期</span><span class="txd-value">'+t.date+'</span></div>';
-  if(t.note)h+='<div class="txd-row"><span class="txd-label">備註</span><span class="txd-value">'+t.note+'</span></div>';
-  const tags=t.tags||[];
-  if(tags.length)h+='<div class="txd-row"><span class="txd-label">Tags</span><span class="txd-value">'+tags.map(tg=>'<span class="tag-pill">#'+tg+'</span>').join(' ')+'</span></div>';
-  h+='<button class="mform-del-full" onclick="doDeleteTx()">🗑 刪除這筆交易</button>';
-  showModal('<div class="modal-title">'+cat.icon+' 交易詳情</div>'+h);
+  const isExp=t.type==='expense';
+
+  // Build HTML safely without nested quotes
+  const acctOpts=accounts.map(function(a){
+    return '<option value="'+a.id+'"'+(a.id===t.acct_id?' selected':'')+'>'+at(a.type).icon+' '+a.name+'</option>';
+  }).join('');
+  const cats=isExp?Object.entries(cm):Object.entries(ci);
+  const catOpts=cats.map(function(entry){
+    return '<option value="'+entry[0]+'"'+(entry[0]===t.category?' selected':'')+'>'+entry[1].icon+' '+entry[1].name+'</option>';
+  }).join('');
+  const tagsVal=(t.tags||[]).join(', ');
+  const amtColor=isExp?'var(--red)':'var(--green)';
+
+  const h='<div class="modal-title">編輯交易</div>'+
+    '<div style="display:flex;margin-bottom:12px;border-radius:var(--r-md);overflow:hidden;border:0.5px solid var(--border2)">'+
+      '<button id="edit-type-e" style="flex:1;padding:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;border:none;background:'+(isExp?'var(--red)':'var(--bg3)')+';color:'+(isExp?'#fff':'var(--text2)')+'">支出</button>'+
+      '<button id="edit-type-i" style="flex:1;padding:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;border:none;background:'+(isExp?'var(--bg3)':'var(--green)')+';color:'+(isExp?'var(--text2)':'#fff')+'">收入</button>'+
+    '</div>'+
+    '<div class="mform-row"><label class="mform-label">金額</label>'+
+    '<input id="edit-amt" class="mform-input" type="number" value="'+Number(t.amount)+'" style="font-size:22px;font-weight:700;text-align:right;color:'+amtColor+'"></div>'+
+    '<div class="mform-row"><label class="mform-label">帳戶</label>'+
+    '<select id="edit-acct" class="mform-input mform-select">'+acctOpts+'</select></div>'+
+    '<div class="mform-row"><label class="mform-label">分類</label>'+
+    '<select id="edit-cat" class="mform-input mform-select">'+catOpts+'</select></div>'+
+    '<div class="mform-row"><label class="mform-label">日期</label>'+
+    '<input id="edit-date" class="mform-input" type="date" value="'+t.date+'"></div>'+
+    '<div class="mform-row"><label class="mform-label">備註</label>'+
+    '<input id="edit-note" class="mform-input" type="text" value="'+(t.note||'')+'" placeholder="選填"></div>'+
+    '<div class="mform-row"><label class="mform-label">Tags（逗號分隔）</label>'+
+    '<input id="edit-tags" class="mform-input" type="text" value="'+tagsVal+'" placeholder="午餐, 工作..."></div>'+
+    '<button id="edit-save-btn" style="width:100%;margin-top:12px;padding:13px;background:var(--blue);color:#fff;border:none;border-radius:var(--r-md);font-size:15px;font-weight:600;cursor:pointer;font-family:inherit">儲存修改</button>'+
+    '<button class="mform-del-full" id="edit-del-btn">🗑 刪除這筆交易</button>';
+
+  showModal(h);
+  // Bind events after DOM ready
+  document.getElementById('edit-type-e').onclick=function(){editToggleType('expense');};
+  document.getElementById('edit-type-i').onclick=function(){editToggleType('income');};
+  document.getElementById('edit-save-btn').onclick=saveEditTx;
+  document.getElementById('edit-del-btn').onclick=doDeleteTx;
+}
+
+// For edit modal type toggle
+function editToggleType(type){
+  document.getElementById('edit-type-e').style.background=type==='expense'?'var(--red)':'var(--bg3)';
+  document.getElementById('edit-type-e').style.color=type==='expense'?'#fff':'var(--text2)';
+  document.getElementById('edit-type-i').style.background=type==='income'?'var(--green)':'var(--bg3)';
+  document.getElementById('edit-type-i').style.color=type==='income'?'#fff':'var(--text2)';
+  // Update category options
+  const t=txs.find(x=>x.id===detailTxId);
+  const cm=cmap('expense'),ci=cmap('income');
+  const cats=type==='expense'?Object.entries(cm):Object.entries(ci);
+  const sel=document.getElementById('edit-cat');
+  sel.innerHTML='';
+  cats.forEach(function(entry){const o=document.createElement('option');o.value=entry[0];o.textContent=entry[1].icon+' '+entry[1].name;sel.appendChild(o);});
+}
+
+async function saveEditTx(){
+  const t=txs.find(x=>x.id===detailTxId);if(!t)return;
+  const newAmt=parseFloat(document.getElementById('edit-amt').value);
+  if(!newAmt||newAmt<=0){toast('請輸入正確金額');return;}
+  const newType=document.getElementById('edit-type-e').style.background.includes('var(--red)')||document.getElementById('edit-type-e').style.background.includes('rgb(')&&!document.getElementById('edit-type-i').style.background.includes('rgb(')?'expense':'income';
+  const typeE=document.getElementById('edit-type-e');
+  const isExpense=typeE.style.color==='rgb(255, 255, 255)'&&typeE.style.background!=='var(--bg3)';
+  const finalType=isExpense?'expense':'income';
+  const newAcctId=document.getElementById('edit-acct').value;
+  const newCat=document.getElementById('edit-cat').value;
+  const newDate=document.getElementById('edit-date').value;
+  const newNote=document.getElementById('edit-note').value.trim();
+  const newTags=document.getElementById('edit-tags').value.split(',').map(function(s){return s.trim();}).filter(Boolean);
+
+  showLoading('儲存中…');
+
+  // Revert old balance
+  const oldAcct=accounts.find(a=>a.id===t.acct_id);
+  if(oldAcct){
+    const reverted=t.type==='income'?Number(oldAcct.balance)-Number(t.amount):Number(oldAcct.balance)+Number(t.amount);
+    await dbUpdateAccount(t.acct_id,{balance:reverted});
+  }
+
+  // Apply new balance
+  const newAcct=accounts.find(a=>a.id===newAcctId);
+  if(newAcct){
+    const updated=finalType==='income'?Number(newAcct.balance)+newAmt:Number(newAcct.balance)-newAmt;
+    await dbUpdateAccount(newAcctId,{balance:updated});
+  }
+
+  // Save changes
+  const changes={type:finalType,amount:newAmt,acct_id:newAcctId,category:newCat,date:newDate,note:newNote,tags:newTags};
+  if(guestMode){
+    Object.assign(t,changes);
+    await idbPut('transactions',t);
+  } else {
+    await sb.from('transactions').update(changes).eq('id',t.id);
+    Object.assign(t,changes);
+  }
+
+  hideLoading();closeModal();
+  renderHome();renderCal();
+  if(document.getElementById('sc-ledger').classList.contains('active'))renderLedger();
+  toast('已更新');
 }
 async function doDeleteTx(){
   if(!detailTxId||!confirm('確定刪除？'))return;

@@ -962,105 +962,68 @@ function openTxDetail(id){
   const t=txs.find(function(x){return x.id===id;});if(!t)return;
   const cm=cmap('expense'),ci=cmap('income');
   const isExp=t.type==='expense';
+  const isTrans=t.type==='transfer'||(t.tags||[]).includes('轉帳');
+  const cat=isExp?(cm[t.category]||{icon:'💰',name:'其他'}):(ci[t.category]||{icon:'💰',name:'其他'});
+  const acct=accounts.find(function(a){return a.id===t.acct_id;});
+  const atyp=acct?at(acct.type):null;
+  const color=isExp?'var(--red)':'var(--green)';
+  const tags=t.tags||[];
 
-  // Build HTML safely without nested quotes
-  const acctOpts=accounts.map(function(a){
-    return '<option value="'+a.id+'"'+(a.id===t.acct_id?' selected':'')+'>'+at(a.type).icon+' '+a.name+'</option>';
+  // Detail rows
+  const rows=[
+    {label:'類型',value:(isExp?'支出':'收入')},
+    {label:'分類',value:cat.icon+' '+cat.name},
+    {label:'帳戶',value:(atyp?atyp.icon:'')+' '+(acct?acct.name:'—')},
+    {label:'日期',value:t.date},
+  ];
+  if(t.note)rows.push({label:'備註',value:t.note});
+  if(tags.length)rows.push({label:'Tags',value:tags.map(function(tg){return '<span class="tag-pill">#'+tg+'</span>';}).join(' ')});
+
+  const rowsHTML=rows.map(function(r){
+    return '<div class="txd-row"><span class="txd-label">'+r.label+'</span><span class="txd-value">'+r.value+'</span></div>';
   }).join('');
-  const cats=isExp?Object.entries(cm):Object.entries(ci);
-  const catOpts=cats.map(function(entry){
-    return '<option value="'+entry[0]+'"'+(entry[0]===t.category?' selected':'')+'>'+entry[1].icon+' '+entry[1].name+'</option>';
-  }).join('');
-  const tagsVal=(t.tags||[]).join(', ');
-  const amtColor=isExp?'var(--red)':'var(--green)';
 
-  const h='<div class="modal-title">編輯交易</div>'+
-    '<div style="display:flex;margin-bottom:12px;border-radius:var(--r-md);overflow:hidden;border:0.5px solid var(--border2)">'+
-      '<button id="edit-type-e" style="flex:1;padding:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;border:none;background:'+(isExp?'var(--red)':'var(--bg3)')+';color:'+(isExp?'#fff':'var(--text2)')+'">支出</button>'+
-      '<button id="edit-type-i" style="flex:1;padding:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;border:none;background:'+(isExp?'var(--bg3)':'var(--green)')+';color:'+(isExp?'var(--text2)':'#fff')+'">收入</button>'+
-    '</div>'+
-    '<div class="mform-row"><label class="mform-label">金額</label>'+
-    '<input id="edit-amt" class="mform-input" type="number" value="'+Number(t.amount)+'" style="font-size:22px;font-weight:700;text-align:right;color:'+amtColor+'"></div>'+
-    '<div class="mform-row"><label class="mform-label">帳戶</label>'+
-    '<select id="edit-acct" class="mform-input mform-select">'+acctOpts+'</select></div>'+
-    '<div class="mform-row"><label class="mform-label">分類</label>'+
-    '<select id="edit-cat" class="mform-input mform-select">'+catOpts+'</select></div>'+
-    '<div class="mform-row"><label class="mform-label">日期</label>'+
-    '<input id="edit-date" class="mform-input" type="date" value="'+t.date+'"></div>'+
-    '<div class="mform-row"><label class="mform-label">備註</label>'+
-    '<input id="edit-note" class="mform-input" type="text" value="'+(t.note||'')+'" placeholder="選填"></div>'+
-    '<div class="mform-row"><label class="mform-label">Tags（逗號分隔）</label>'+
-    '<input id="edit-tags" class="mform-input" type="text" value="'+tagsVal+'" placeholder="午餐, 工作..."></div>'+
-    '<button id="edit-save-btn" style="width:100%;margin-top:12px;padding:13px;background:var(--blue);color:#fff;border:none;border-radius:var(--r-md);font-size:15px;font-weight:600;cursor:pointer;font-family:inherit">儲存修改</button>'+
-    '<button class="mform-del-full" id="edit-del-btn">🗑 刪除這筆交易</button>';
+  // Title row with copy button on right
+  const titleHTML='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">'+
+    '<div style="font-size:16px;font-weight:600;color:var(--text)">'+cat.icon+' 交易詳情</div>'+
+    '<button id="detail-copy-btn" style="display:flex;align-items:center;gap:4px;padding:6px 12px;border:0.5px solid var(--border2);border-radius:var(--r-md);background:var(--bg2);color:var(--text2);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">'+
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>'+
+      ' 複製新增'+
+    '</button>'+
+  '</div>';
 
-  showModal(h);
-  // Bind events after DOM ready
-  document.getElementById('edit-type-e').onclick=function(){editToggleType('expense');};
-  document.getElementById('edit-type-i').onclick=function(){editToggleType('income');};
-  document.getElementById('edit-save-btn').onclick=saveEditTx;
-  document.getElementById('edit-del-btn').onclick=doDeleteTx;
+  const amtHTML='<div class="txd-amount" style="color:'+color+'">'+(isExp?'-':'+')+' NT$'+fmt(Number(t.amount))+'</div>';
+
+  showModal(titleHTML+amtHTML+rowsHTML+'<button class="mform-del-full" id="detail-del-btn">🗑 刪除這筆交易</button>');
+
+  document.getElementById('detail-del-btn').onclick=doDeleteTx;
+  document.getElementById('detail-copy-btn').onclick=function(){copyToAdd(id);};
 }
 
-// For edit modal type toggle
-function editToggleType(type){
-  document.getElementById('edit-type-e').style.background=type==='expense'?'var(--red)':'var(--bg3)';
-  document.getElementById('edit-type-e').style.color=type==='expense'?'#fff':'var(--text2)';
-  document.getElementById('edit-type-i').style.background=type==='income'?'var(--green)':'var(--bg3)';
-  document.getElementById('edit-type-i').style.color=type==='income'?'#fff':'var(--text2)';
-  // Update category options
-  const t=txs.find(x=>x.id===detailTxId);
-  const cm=cmap('expense'),ci=cmap('income');
-  const cats=type==='expense'?Object.entries(cm):Object.entries(ci);
-  const sel=document.getElementById('edit-cat');
-  sel.innerHTML='';
-  cats.forEach(function(entry){const o=document.createElement('option');o.value=entry[0];o.textContent=entry[1].icon+' '+entry[1].name;sel.appendChild(o);});
-}
-
-async function saveEditTx(){
-  const t=txs.find(x=>x.id===detailTxId);if(!t)return;
-  const newAmt=parseFloat(document.getElementById('edit-amt').value);
-  if(!newAmt||newAmt<=0){toast('請輸入正確金額');return;}
-  const newType=document.getElementById('edit-type-e').style.background.includes('var(--red)')||document.getElementById('edit-type-e').style.background.includes('rgb(')&&!document.getElementById('edit-type-i').style.background.includes('rgb(')?'expense':'income';
-  const typeE=document.getElementById('edit-type-e');
-  const isExpense=typeE.style.color==='rgb(255, 255, 255)'&&typeE.style.background!=='var(--bg3)';
-  const finalType=isExpense?'expense':'income';
-  const newAcctId=document.getElementById('edit-acct').value;
-  const newCat=document.getElementById('edit-cat').value;
-  const newDate=document.getElementById('edit-date').value;
-  const newNote=document.getElementById('edit-note').value.trim();
-  const newTags=document.getElementById('edit-tags').value.split(',').map(function(s){return s.trim();}).filter(Boolean);
-
-  showLoading('儲存中…');
-
-  // Revert old balance
-  const oldAcct=accounts.find(a=>a.id===t.acct_id);
-  if(oldAcct){
-    const reverted=t.type==='income'?Number(oldAcct.balance)-Number(t.amount):Number(oldAcct.balance)+Number(t.amount);
-    await dbUpdateAccount(t.acct_id,{balance:reverted});
-  }
-
-  // Apply new balance
-  const newAcct=accounts.find(a=>a.id===newAcctId);
-  if(newAcct){
-    const updated=finalType==='income'?Number(newAcct.balance)+newAmt:Number(newAcct.balance)-newAmt;
-    await dbUpdateAccount(newAcctId,{balance:updated});
-  }
-
-  // Save changes
-  const changes={type:finalType,amount:newAmt,acct_id:newAcctId,category:newCat,date:newDate,note:newNote,tags:newTags};
-  if(guestMode){
-    Object.assign(t,changes);
-    await idbPut('transactions',t);
-  } else {
-    await sb.from('transactions').update(changes).eq('id',t.id);
-    Object.assign(t,changes);
-  }
-
-  hideLoading();closeModal();
-  renderHome();renderCal();
-  if(document.getElementById('sc-ledger').classList.contains('active'))renderLedger();
-  toast('已更新');
+function copyToAdd(id){
+  const t=txs.find(function(x){return x.id===id;});if(!t)return;
+  closeModal();
+  // Set up add screen with this tx's data, then navigate
+  go('add');
+  // After initAdd runs, override with copied values
+  setTimeout(function(){
+    // Type
+    curType=t.type==='transfer'?'expense':t.type;
+    selCat=t.category==='transfer'?'other':t.category;
+    selectedAcctId=t.acct_id;
+    addTags=(t.tags||[]).filter(function(tg){return tg!=='轉帳';});
+    // Amount
+    const amtEl=document.getElementById('amt-in');
+    if(amtEl)amtEl.value=Number(t.amount);
+    // Note
+    const noteEl=document.getElementById('tx-note');
+    if(noteEl)noteEl.value=t.note||'';
+    // Date = today
+    const today=new Date();
+    const dateEl=document.getElementById('tx-date');
+    if(dateEl)dateEl.value=today.getFullYear()+'-'+pad(today.getMonth()+1)+'-'+pad(today.getDate());
+    updateTypeUI();renderCatGridSorted();renderAcctPicker();renderTagChips();
+  },50);
 }
 async function doDeleteTx(){
   if(!detailTxId||!confirm('確定刪除？'))return;

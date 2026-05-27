@@ -154,6 +154,7 @@ body{background:var(--bg3);font-family:-apple-system,BlinkMacSystemFont,'Helveti
 .tbtn{flex:1;padding:8px;border:none;border-radius:7px;font-size:14px;font-weight:600;cursor:pointer;background:none;color:var(--text2);font-family:inherit;transition:all .15s}
 .tbtn.ae{background:var(--red);color:#fff}
 .tbtn.ai{background:var(--green);color:#fff}
+.tbtn.at{background:var(--blue);color:#fff}
 .amt-wrap{margin:0 14px 12px;display:flex;align-items:center;gap:6px;border-bottom:2px solid var(--border2);padding-bottom:10px}
 .amt-cur{font-size:18px;color:var(--text3);font-weight:500}
 /* ① 移除 spinner */
@@ -432,11 +433,16 @@ body{background:var(--bg3);font-family:-apple-system,BlinkMacSystemFont,'Helveti
       </div>
       <!-- ③④ 帳戶卡片選擇 -->
       <div class="acct-pick-wrap">
-        <div class="acct-pick-lbl">選擇帳戶</div>
+        <div class="acct-pick-lbl" id="acct-from-lbl">選擇帳戶</div>
         <div class="acct-pick-scroll" id="acct-pick-scroll"></div>
       </div>
+      <!-- 轉帳目標帳戶 -->
+      <div class="acct-pick-wrap" id="transfer-to-wrap" style="display:none">
+        <div class="acct-pick-lbl">轉入帳戶</div>
+        <div class="acct-pick-scroll" id="acct-pick-to"></div>
+      </div>
       <!-- ⑦ 分類 -->
-      <div class="cat-sec"><div class="cat-lbl">分類 <span style="color:var(--text3);font-weight:400">（依使用頻率排序）</span></div><div class="cat-grid" id="cg"></div></div>
+      <div class="cat-sec" id="cat-section"><div class="cat-lbl">分類 <span style="color:var(--text3);font-weight:400">（依使用頻率排序）</span></div><div class="cat-grid" id="cg"></div></div>
     </div>
     <div class="bnav">
       <button class="nb" onclick="go('home')"><i class="ti ti-home"></i>首頁</button>
@@ -556,7 +562,13 @@ const ATYPES=[
   {id:'other',name:'其他',icon:'💼',color:'#888780'},
 ];
 function at(id){return ATYPES.find(t=>t.id===id)||ATYPES[5];}
-function cmap(t){const m={};(t==='expense'?ECATS:ICATS).forEach(c=>m[c.id]=c);return m;}
+function cmap(t){
+  const m={};
+  (t==='expense'?ECATS:ICATS).forEach(function(c){m[c.id]=c;});
+  // Always include transfer so it renders correctly
+  m['transfer']={id:'transfer',icon:'🔄',name:'轉帳'};
+  return m;
+}
 
 /* ── STATE ── */
 let currentUser=null;
@@ -1111,12 +1123,37 @@ function initAdd(){
   setTimeout(()=>document.getElementById('amt-in').focus(),120);
 }
 
+let transferToId=null;
 function setType(t){
   curType=t;
-  const sorted=getCatsSorted(t);selCat=sorted[0]?.id||(t==='expense'?'food':'salary');
-  updateTypeUI();renderCatGridSorted();
+  if(t!=='transfer'){
+    const sorted=getCatsSorted(t);selCat=sorted[0]?.id||(t==='expense'?'food':'salary');
+  }
+  updateTypeUI();
+  if(t!=='transfer') renderCatGridSorted();
+  // Show/hide transfer UI
+  const toWrap=document.getElementById('transfer-to-wrap');
+  const catSec=document.getElementById('cat-section');
+  const fromLbl=document.getElementById('acct-from-lbl');
+  if(t==='transfer'){
+    toWrap.style.display='block';
+    catSec.style.display='none';
+    fromLbl.textContent='轉出帳戶';
+    // Pre-select second account as target
+    const ranked=getAcctUsageRank();
+    transferToId=ranked.find(function(a){return a.id!==selectedAcctId;})?.id||null;
+    renderAcctPickerTo();
+  } else {
+    toWrap.style.display='none';
+    catSec.style.display='';
+    fromLbl.textContent='選擇帳戶';
+  }
 }
-function updateTypeUI(){document.getElementById('tb-e').className='tbtn'+(curType==='expense'?' ae':'');document.getElementById('tb-i').className='tbtn'+(curType==='income'?' ai':'');}
+function updateTypeUI(){
+  document.getElementById('tb-e').className='tbtn'+(curType==='expense'?' ae':'');
+  document.getElementById('tb-i').className='tbtn'+(curType==='income'?' ai':'');
+  document.getElementById('tb-t').className='tbtn'+(curType==='transfer'?' at':'');
+}
 
 /* ③ 帳戶卡片 */
 function renderAcctPicker(){
@@ -1134,7 +1171,25 @@ function renderAcctPicker(){
       '<div class="acct-card-bal">NT$'+fmt(Number(a.balance))+'</div></div>';
   }).join('');
 }
-function pickAcct(id){selectedAcctId=id;renderAcctPicker();}
+function pickAcct(id){selectedAcctId=id;renderAcctPicker();if(curType==='transfer')renderAcctPickerTo();}
+function renderAcctPickerTo(){
+  const wrap=document.getElementById('acct-pick-to');
+  if(!wrap)return;
+  const ranked=getAcctUsageRank();
+  wrap.innerHTML=ranked.map(function(a){
+    if(a.id===selectedAcctId)return ''; // can't transfer to same acct
+    const typ=at(a.type);
+    const isSel=a.id===transferToId;
+    return '<div class="acct-card'+(isSel?' sel':'')+'" data-aid="'+a.id+'">'+
+      '<div class="acct-card-icon">'+typ.icon+'</div>'+
+      '<div class="acct-card-name">'+a.name+'</div>'+
+      '<div class="acct-card-bal">NT$'+fmt(Number(a.balance))+'</div></div>';
+  }).join('');
+  wrap.querySelectorAll('.acct-card').forEach(function(el){
+    el.onclick=function(){transferToId=el.dataset.aid;renderAcctPickerTo();};
+  });
+}
+function pickAcctTo(id){transferToId=id;renderAcctPickerTo();}
 
 /* ⑦ 分類含頻率 */
 function renderCatGridSorted(){
@@ -1178,6 +1233,25 @@ async function saveTx(){
   const date=document.getElementById('tx-date').value;
   const note=document.getElementById('tx-note').value.trim();
   if(!selectedAcctId){toast('請選擇帳戶');return;}
+
+  if(curType==='transfer'){
+    if(!transferToId){toast('請選擇轉入帳戶');return;}
+    if(transferToId===selectedAcctId){toast('轉出和轉入不能相同');return;}
+    showLoading('轉帳中…');
+    // Expense from source
+    const r1=await dbAddTx({type:'expense',amount,category:'transfer',date,note:note||'轉帳',acct_id:selectedAcctId,tags:['轉帳']});
+    // Income to target
+    const r2=await dbAddTx({type:'income',amount,category:'transfer',date,note:note||'轉帳',acct_id:transferToId,tags:['轉帳']});
+    if(r1&&r2){
+      const from=accounts.find(a=>a.id===selectedAcctId);
+      const to=accounts.find(a=>a.id===transferToId);
+      if(from)await dbUpdateAccount(from.id,{balance:Number(from.balance)-amount});
+      if(to)await dbUpdateAccount(to.id,{balance:Number(to.balance)+amount});
+      hideLoading();toast('轉帳完成 ✓');go('cal');
+    } else {hideLoading();}
+    return;
+  }
+
   const result=await dbAddTx({type:curType,amount,category:selCat,date,note,acct_id:selectedAcctId,tags:addTags});
   if(result){
     const acct=accounts.find(a=>a.id===selectedAcctId);

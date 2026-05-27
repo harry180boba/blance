@@ -415,6 +415,7 @@ body{background:var(--bg3);font-family:-apple-system,BlinkMacSystemFont,'Helveti
       <div class="type-sw">
         <button class="tbtn ae" id="tb-e" onclick="setType('expense')">支出</button>
         <button class="tbtn" id="tb-i" onclick="setType('income')">收入</button>
+        <button class="tbtn" id="tb-t" onclick="setType('transfer')">轉帳</button>
       </div>
       <div class="amt-wrap">
         <span class="amt-cur">NT$</span>
@@ -523,7 +524,7 @@ body{background:var(--bg3);font-family:-apple-system,BlinkMacSystemFont,'Helveti
         <i class="ti ti-chevron-right" style="color:var(--text3)"></i>
       </div>
 	  <div class="setting-section-label" style="margin-top:16px">版本</div>
-	  4.0.10
+	  4.0.11
     </div>
     <div class="bnav">
       <button class="nb" onclick="go('home')"><i class="ti ti-home"></i>首頁</button>
@@ -1002,30 +1003,12 @@ function openTxDetail(id){
   document.getElementById('detail-copy-btn').onclick=function(){copyToAdd(id);};
 }
 
+let pendingCopy=null; // holds tx data to pre-fill on next initAdd
 function copyToAdd(id){
   const t=txs.find(function(x){return x.id===id;});if(!t)return;
   closeModal();
-  // Set up add screen with this tx's data, then navigate
+  pendingCopy=t; // initAdd will read this
   go('add');
-  // After initAdd runs, override with copied values
-  setTimeout(function(){
-    // Type
-    curType=t.type==='transfer'?'expense':t.type;
-    selCat=t.category==='transfer'?'other':t.category;
-    selectedAcctId=t.acct_id;
-    addTags=(t.tags||[]).filter(function(tg){return tg!=='轉帳';});
-    // Amount
-    const amtEl=document.getElementById('amt-in');
-    if(amtEl)amtEl.value=Number(t.amount);
-    // Note
-    const noteEl=document.getElementById('tx-note');
-    if(noteEl)noteEl.value=t.note||'';
-    // Date = today
-    const today=new Date();
-    const dateEl=document.getElementById('tx-date');
-    if(dateEl)dateEl.value=today.getFullYear()+'-'+pad(today.getMonth()+1)+'-'+pad(today.getDate());
-    updateTypeUI();renderCatGridSorted();renderAcctPicker();renderTagChips();
-  },50);
 }
 async function doDeleteTx(){
   if(!detailTxId||!confirm('確定刪除？'))return;
@@ -1075,17 +1058,32 @@ function getCatsSorted(type){
 
 function initAdd(){
   const today=new Date();
-  document.getElementById('tx-date').value=today.getFullYear()+'-'+pad(today.getMonth()+1)+'-'+pad(today.getDate());
-  document.getElementById('tx-note').value='';
-  document.getElementById('amt-in').value='';
-  addTags=[];renderTagChips();
-  curType='expense';
-  const sortedCats=getCatsSorted('expense');selCat=sortedCats[0]?.id||'food';
-  // ④ 推薦帳戶 = 最常用的
-  const ranked=getAcctUsageRank();
-  selectedAcctId=ranked[0]?.id||accounts[0]?.id||null;
+  const todayStr=today.getFullYear()+'-'+pad(today.getMonth()+1)+'-'+pad(today.getDate());
+  addTags=[];
+
+  if(pendingCopy){
+    // Pre-fill from copied tx
+    const t=pendingCopy; pendingCopy=null;
+    curType=t.type==='transfer'?'expense':t.type;
+    selCat=t.category==='transfer'?'other':t.category;
+    selectedAcctId=t.acct_id||accounts[0]?.id||null;
+    addTags=(t.tags||[]).filter(function(tg){return tg!=='轉帳';});
+    document.getElementById('amt-in').value=Number(t.amount);
+    document.getElementById('tx-note').value=t.note||'';
+    document.getElementById('tx-date').value=todayStr;
+  } else {
+    curType='expense';
+    const sortedCats=getCatsSorted('expense');selCat=sortedCats[0]?.id||'food';
+    const ranked=getAcctUsageRank();
+    selectedAcctId=ranked[0]?.id||accounts[0]?.id||null;
+    document.getElementById('tx-date').value=todayStr;
+    document.getElementById('tx-note').value='';
+    document.getElementById('amt-in').value='';
+  }
+
+  renderTagChips();
   updateTypeUI();renderCatGridSorted();renderAcctPicker();
-  setTimeout(()=>document.getElementById('amt-in').focus(),120);
+  setTimeout(function(){document.getElementById('amt-in').focus();},120);
 }
 
 let transferToId=null;

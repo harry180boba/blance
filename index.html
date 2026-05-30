@@ -25,8 +25,8 @@
   --green:#1D9E75;--green-bg:#083028;--green-mid:#5DCAA5;
   --red:#D85A30;--red-mid:#F0997B;--red-bg:#3A1810;
 }}
-html{height:100%;overflow:hidden;background:var(--bg3)}body{background:var(--bg3);font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;display:flex;justify-content:center;height:100%;overflow:hidden;touch-action:manipulation}
-.app{width:100%;max-width:430px;background:var(--bg);display:flex;flex-direction:column;height:100vh;height:100svh;height:100dvh;position:fixed;top:0;left:0;right:0;bottom:0;margin:0 auto;overflow:hidden}
+html{height:100%;overflow:hidden;background:var(--bg)}body{background:var(--bg);font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;display:flex;justify-content:center;height:100%;overflow:hidden;touch-action:manipulation}
+.app{width:100%;max-width:430px;background:var(--bg);display:flex;flex-direction:column;position:fixed;top:0;left:0;right:0;bottom:0;margin:0 auto;overflow:hidden}
 .screen{display:none;flex-direction:column;position:absolute;top:0;left:0;right:0;bottom:calc(56px + env(safe-area-inset-bottom,0px));overflow:hidden}
 .screen.active{display:flex}
 
@@ -56,7 +56,7 @@ html{height:100%;overflow:hidden;background:var(--bg3)}body{background:var(--bg3
 .icon-btn i{font-size:16px}
 
 /* BOTTOM NAV */
-.bnav{display:flex;background:var(--bg);border-top:0.5px solid var(--border);position:absolute;bottom:0;left:0;right:0;z-index:50;padding-top:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom,0px));align-items:flex-start}
+.bnav{display:flex;background:var(--bg);border-top:0.5px solid var(--border);position:absolute;bottom:0;left:0;right:0;z-index:50;padding-top:8px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 8px);align-items:flex-start}
 .nb{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;cursor:pointer;padding:4px 0;color:var(--text3);font-size:10px;font-family:inherit}
 .nb i{font-size:22px}
 .nb.on{color:var(--blue)}
@@ -281,6 +281,7 @@ html{height:100%;overflow:hidden;background:var(--bg3)}body{background:var(--bg3
 </head>
 <body>
 <div class="app" id="app">
+
   <div id="splash" style="position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;gap:8px">
     <div style="font-size:48px">💰</div>
     <div style="font-size:20px;font-weight:700;color:var(--text)">記帳本</div>
@@ -399,7 +400,7 @@ html{height:100%;overflow:hidden;background:var(--bg3)}body{background:var(--bg3
       <button class="nb" onclick="go('settings')"><i class="ti ti-settings"></i>設定</button>
     </div>
     <!-- FAB: always visible on cal screen -->
-    <button id="cal-fab" onclick="go('add')" style="position:absolute;right:18px;bottom:calc(60px + env(safe-area-inset-bottom,0px) + 10px);width:52px;height:52px;border-radius:50%;background:var(--blue);color:#fff;border:none;box-shadow:0 4px 16px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:60;font-size:26px;line-height:1">
+    <button id="cal-fab" onclick="go('add')" style="position:absolute;right:18px;bottom:calc(56px + env(safe-area-inset-bottom,0px) + 14px);width:52px;height:52px;border-radius:50%;background:var(--blue);color:#fff;border:none;box-shadow:0 4px 16px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:60;font-size:26px;line-height:1">
       <i class="ti ti-plus"></i>
     </button>
   </div>
@@ -530,6 +531,18 @@ html{height:100%;overflow:hidden;background:var(--bg3)}body{background:var(--bg3
       <div class="setting-row" onclick="openManageTags()">
         <div class="setting-row-left"><i class="ti ti-hash" style="color:var(--amber)"></i>管理 Tags</div>
         <i class="ti ti-chevron-right" style="color:var(--text3)"></i>
+      </div>
+      <div class="setting-section-label" style="margin-top:16px">介面</div>
+      <div class="setting-row" style="flex-direction:column;align-items:stretch;gap:8px;cursor:default">
+        <div class="setting-row-left"><i class="ti ti-layout-bottombar" style="color:var(--blue)"></i>底部間距調整</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input type="range" id="bnav-offset-slider" min="-30" max="60" step="1" value="0"
+            style="flex:1;accent-color:var(--blue);cursor:pointer"
+            oninput="previewBnavOffset(this.value)"
+            onchange="saveBnavOffset(this.value)">
+          <span id="bnav-offset-val" style="font-size:13px;font-weight:700;color:var(--blue);min-width:36px;text-align:right">0 px</span>
+        </div>
+        <div style="font-size:11px;color:var(--text3)">若底部有空白，往右調直到貼合</div>
       </div>
       <div class="setting-section-label" style="margin-top:16px">匯出資料</div>
       <div class="setting-row" onclick="exportCSV()">
@@ -1339,37 +1352,114 @@ function applyCustomRange(){
   renderChart();
 }
 function openChartSettings(){
+  renderChartSettingsModal();
+}
+function renderChartSettingsModal(){
   const all=getAllTags();
-  let h='<div class="modal-title">統計篩選</div>';
-  h+='<div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px">類型</div>';
-  h+='<div style="display:flex;gap:6px;margin-bottom:14px">'+
-    ['expense','income'].map(function(t){
-      const lbl=t==='expense'?'支出':'收入';
-      const on=chartFilter.type===t;
-      return '<button data-type="'+t+'" style="flex:1;padding:9px;border-radius:var(--r-md);border:0.5px solid var(--border2);background:'+(on?'var(--blue)':'none')+';color:'+(on?'#fff':'var(--text2)')+';font-size:13px;font-weight:600;cursor:pointer;font-family:inherit" onclick="setChartType(this)">'+lbl+'</button>';
-    }).join('')+'</div>';
-  h+='<div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px">標籤篩選</div>';
-  h+='<div style="display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto">';
-  const none=!chartFilter.tag;
-  h+='<div class="tag-manage-item" style="cursor:pointer;background:'+(none?'var(--blue)':'var(--bg2)')+'" onclick="setChartTag(null)">'+
-    '<span style="color:'+(none?'#fff':'var(--text)')+'">全部（不篩選）</span>'+
-    (none?'<i class="ti ti-check" style="color:#fff"></i>':'')+'</div>';
-  all.forEach(function(tg){
-    const on=chartFilter.tag===tg;
-    h+='<div class="tag-manage-item" style="cursor:pointer;background:'+(on?'var(--blue)':'var(--bg2)')+'" data-tag="'+tg+'" onclick="setChartTag(this.dataset.tag)">'+
-      '<span style="color:'+(on?'#fff':'var(--text)')+'"># '+tg+'</span>'+
-      (on?'<i class="ti ti-check" style="color:#fff"></i>':'')+'</div>';
+  const box=document.createElement('div');
+
+  // Header
+  const hdr=document.createElement('div');
+  hdr.style.cssText='display:flex;align-items:center;justify-content:space-between;margin-bottom:14px';
+  const title=document.createElement('span');
+  title.style.cssText='font-size:16px;font-weight:600;color:var(--text)';
+  title.textContent='統計篩選';
+  const doneBtn=document.createElement('button');
+  doneBtn.style.cssText='padding:6px 16px;background:var(--blue);color:#fff;border:none;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit';
+  doneBtn.textContent='完成';
+  doneBtn.onclick=applyChartSettings;
+  hdr.appendChild(title);hdr.appendChild(doneBtn);
+  box.appendChild(hdr);
+
+  // Type section
+  const typeLbl=document.createElement('div');
+  typeLbl.style.cssText='font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px';
+  typeLbl.textContent='類型';
+  box.appendChild(typeLbl);
+  const typeRow=document.createElement('div');
+  typeRow.style.cssText='display:flex;gap:6px;margin-bottom:16px';
+  ['expense','income'].forEach(function(t){
+    const b=document.createElement('button');
+    b.dataset.type=t;b.className='cft-type';
+    b.textContent=t==='expense'?'支出':'收入';
+    const on=chartFilter.type===t;
+    b.style.cssText='flex:1;padding:9px;border-radius:var(--r-md);border:0.5px solid var(--border2);background:'+(on?'var(--blue)':'none')+';color:'+(on?'#fff':'var(--text2)')+';font-size:13px;font-weight:600;cursor:pointer;font-family:inherit';
+    b.onclick=function(){toggleChartType(b);};
+    typeRow.appendChild(b);
   });
-  if(!all.length)h+='<div style="color:var(--text3);font-size:13px;padding:8px 0">尚無標籤</div>';
-  h+='</div>';
-  showModal(h);
+  box.appendChild(typeRow);
+
+  // Tag section
+  const tagLbl=document.createElement('div');
+  tagLbl.style.cssText='font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px';
+  tagLbl.textContent='標籤篩選';
+  box.appendChild(tagLbl);
+  const tagList=document.createElement('div');
+  tagList.style.cssText='display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto;-webkit-overflow-scrolling:touch';
+
+  // All tags option
+  const noneRow=document.createElement('div');
+  noneRow.id='cftag-null';noneRow.className='tag-manage-item';
+  const noneOn=!chartFilter.tag;
+  noneRow.style.cssText='cursor:pointer;background:'+(noneOn?'var(--blue)':'var(--bg2)');
+  noneRow.innerHTML='<span style="color:'+(noneOn?'#fff':'var(--text)')+'">全部（不篩選）</span>'+(noneOn?'<i class="ti ti-check" style="color:#fff;margin-left:auto"></i>':'');
+  noneRow.onclick=function(){toggleChartTag(noneRow,'');};
+  tagList.appendChild(noneRow);
+
+  // Each tag
+  all.forEach(function(tg){
+    const row=document.createElement('div');
+    row.className='tag-manage-item cftag-item';row.dataset.tag=tg;
+    const on=chartFilter.tag===tg;
+    row.style.cssText='cursor:pointer;background:'+(on?'var(--blue)':'var(--bg2)');
+    row.innerHTML='<span style="color:'+(on?'#fff':'var(--text)')+'"># '+tg+'</span>'+(on?'<i class="ti ti-check" style="color:#fff;margin-left:auto"></i>':'');
+    row.onclick=function(){toggleChartTag(row,tg);};
+    tagList.appendChild(row);
+  });
+  if(!all.length){const em=document.createElement('div');em.style.cssText='color:var(--text3);font-size:13px;padding:8px 0';em.textContent='尚無標籤';tagList.appendChild(em);}
+  box.appendChild(tagList);
+
+  showModal(box.innerHTML);
+  // Re-bind events since showModal uses innerHTML
+  const done2=document.querySelector('.modal-box button');
+  if(done2)done2.onclick=applyChartSettings;
+  document.querySelectorAll('.cft-type').forEach(function(b){b.onclick=function(){toggleChartType(b);};});
+  document.getElementById('cftag-null').onclick=function(){toggleChartTag(this,'');};
+  document.querySelectorAll('.cftag-item').forEach(function(r){r.onclick=function(){toggleChartTag(this,this.dataset.tag);};});
 }
-function setChartType(btn){
-  chartFilter.type=btn.dataset.type;
-  closeModal();renderChart();
+function toggleChartType(btn){
+  // Update UI only, don't close
+  document.querySelectorAll('.cft-type').forEach(function(b){
+    const on=b===btn;
+    b.style.background=on?'var(--blue)':'none';
+    b.style.color=on?'#fff':'var(--text2)';
+    b.dataset.selected=on?'1':'';
+  });
+  btn.dataset.selected='1';
+  // Store pending selection
+  btn._pendingType=true;
 }
-function setChartTag(tag){
-  chartFilter.tag=tag;
+function toggleChartTag(el,tag){
+  // Update UI only
+  document.querySelectorAll('.cftag-item, #cftag-null').forEach(function(e){
+    const on=e===el;
+    e.style.background=on?'var(--blue)':'var(--bg2)';
+    const span=e.querySelector('span');if(span)span.style.color=on?'#fff':'var(--text)';
+    const chk=e.querySelector('i');if(chk)chk.remove();
+    if(on){const i=document.createElement('i');i.className='ti ti-check';i.style.cssText='color:#fff;margin-left:auto';e.appendChild(i);}
+  });
+  el._pendingTag=tag;
+  document.getElementById('cftag-null')._lastTag=tag;
+}
+function applyChartSettings(){
+  // Read selected type
+  const selType=document.querySelector('.cft-type[style*="var(--blue)"]');
+  if(selType)chartFilter.type=selType.dataset.type;
+  // Read selected tag
+  const tagHolder=document.getElementById('cftag-null');
+  if(tagHolder&&tagHolder._lastTag!==undefined){
+    chartFilter.tag=tagHolder._lastTag===''?null:tagHolder._lastTag;
+  }
   closeModal();renderChart();
 }
 
@@ -1595,6 +1685,20 @@ async function deleteGlobalTag(tag){
   globalTags=globalTags.filter(function(t){return t!==tag;});
   await saveGlobalTags();openManageTags();toast('已刪除標籤');
 }
+/* ── BNAV OFFSET ── */
+function applyBnavOffset(px){
+  const n=parseInt(px)||0;
+  document.querySelectorAll('.bnav').forEach(function(el){el.style.paddingBottom=n+'px';});
+  document.querySelectorAll('.screen').forEach(function(el){el.style.bottom='calc('+(56+n)+'px + env(safe-area-inset-bottom,0px))';});
+  const fab=document.getElementById('cal-fab');
+  if(fab)fab.style.bottom='calc('+(70+n)+'px + env(safe-area-inset-bottom,0px))';
+  const s=document.getElementById('bnav-offset-slider');if(s)s.value=n;
+  const l=document.getElementById('bnav-offset-val');if(l)l.textContent=n+' px';
+}
+function previewBnavOffset(v){document.getElementById('bnav-offset-val').textContent=v+' px';applyBnavOffset(v);}
+function saveBnavOffset(v){localStorage.setItem('bnavOffset',v);applyBnavOffset(v);}
+function loadBnavOffset(){const v=localStorage.getItem('bnavOffset');if(v!==null)applyBnavOffset(parseInt(v));}
+
 /* ── BOOT ── */
 function hideSplash(){const s=document.getElementById('splash');if(s)s.style.display='none';}
 function showAuth(){hideSplash();document.getElementById('sc-auth').classList.add('active');}
@@ -1607,6 +1711,8 @@ setTimeout(()=>{
 
 (async()=>{
   try{await openIDB();}catch(e){console.error('IDB error',e);showAuth();return;}
+  loadBnavOffset();
+  loadBnavOffset();
 
   try{
     const{data:{session}}=await sb.auth.getSession();

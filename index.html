@@ -27,7 +27,7 @@
 }}
 html{height:100%;overflow:hidden;background:var(--bg3)}body{background:var(--bg3);font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;display:flex;justify-content:center;height:100%;overflow:hidden;touch-action:manipulation}
 .app{width:100%;max-width:430px;background:var(--bg);display:flex;flex-direction:column;height:100vh;height:100svh;height:100dvh;position:fixed;top:0;left:0;right:0;bottom:0;margin:0 auto;overflow:hidden}
-.screen{display:none;flex-direction:column;position:absolute;top:0;left:0;right:0;bottom:calc(60px + env(safe-area-inset-bottom,0px));overflow:hidden}
+.screen{display:none;flex-direction:column;position:absolute;top:0;left:0;right:0;bottom:calc(56px + env(safe-area-inset-bottom,0px));overflow:hidden}
 .screen.active{display:flex}
 
 /* AUTH */
@@ -56,7 +56,7 @@ html{height:100%;overflow:hidden;background:var(--bg3)}body{background:var(--bg3
 .icon-btn i{font-size:16px}
 
 /* BOTTOM NAV */
-.bnav{display:flex;background:var(--bg);border-top:0.5px solid var(--border);padding:8px 0 calc(8px + env(safe-area-inset-bottom,0px));position:absolute;bottom:0;left:0;right:0;height:calc(60px + env(safe-area-inset-bottom,0px));z-index:50;align-items:flex-start}
+.bnav{display:flex;background:var(--bg);border-top:0.5px solid var(--border);position:absolute;bottom:0;left:0;right:0;z-index:50;padding-top:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom,0px));align-items:flex-start}
 .nb{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;cursor:pointer;padding:4px 0;color:var(--text3);font-size:10px;font-family:inherit}
 .nb i{font-size:22px}
 .nb.on{color:var(--blue)}
@@ -399,7 +399,7 @@ html{height:100%;overflow:hidden;background:var(--bg3)}body{background:var(--bg3
       <button class="nb" onclick="go('settings')"><i class="ti ti-settings"></i>設定</button>
     </div>
     <!-- FAB: always visible on cal screen -->
-    <button id="cal-fab" onclick="go('add')" style="position:absolute;right:18px;bottom:calc(56px + env(safe-area-inset-bottom,0px) + 14px);width:52px;height:52px;border-radius:50%;background:var(--blue);color:#fff;border:none;box-shadow:0 4px 16px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:60;font-size:26px;line-height:1">
+    <button id="cal-fab" onclick="go('add')" style="position:absolute;right:18px;bottom:calc(60px + env(safe-area-inset-bottom,0px) + 10px);width:52px;height:52px;border-radius:50%;background:var(--blue);color:#fff;border:none;box-shadow:0 4px 16px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:60;font-size:26px;line-height:1">
       <i class="ti ti-plus"></i>
     </button>
   </div>
@@ -458,19 +458,44 @@ html{height:100%;overflow:hidden;background:var(--bg3)}body{background:var(--bg3
 
   <!-- CHART -->
   <div class="screen" id="sc-chart">
-    <div class="hdr" style="flex-shrink:0;overflow:visible">
-      <div class="hdr-row">
-        <h2>統計</h2>
-        <div class="chart-mnav">
-          <button onclick="chartChg(-1)"><i class="ti ti-chevron-left"></i></button>
-          <span class="chart-mlbl" id="cml"></span>
-          <button onclick="chartChg(1)"><i class="ti ti-chevron-right"></i></button>
+    <!-- Fixed header area -->
+    <div style="flex-shrink:0;background:var(--bg);border-bottom:0.5px solid var(--border);padding:14px 14px 0">
+      <!-- Title row -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <h2 style="font-size:20px;font-weight:700;color:var(--text)">統計</h2>
+        <button onclick="openChartSettings()" style="display:flex;align-items:center;gap:5px;padding:6px 12px;border:0.5px solid var(--border2);border-radius:20px;background:none;color:var(--text2);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">
+          <i class="ti ti-adjustments-horizontal"></i> 篩選
+        </button>
+      </div>
+      <!-- Range tabs -->
+      <div style="display:flex;gap:6px;margin-bottom:10px">
+        <button class="chart-rtab on" id="crt-month" onclick="setChartRange('month',this)">月</button>
+        <button class="chart-rtab" id="crt-quarter" onclick="setChartRange('quarter',this)">季</button>
+        <button class="chart-rtab" id="crt-year" onclick="setChartRange('year',this)">年</button>
+        <button class="chart-rtab" id="crt-custom" onclick="setChartRange('custom',this)">自訂</button>
+        <div id="chart-tag-badge" style="display:none;margin-left:auto;padding:4px 10px;border-radius:20px;background:var(--blue-bg);color:var(--blue);font-size:11px;font-weight:600"></div>
+      </div>
+      <!-- Period nav row -->
+      <div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:10px">
+        <button onclick="chartChg(-1)" style="background:none;border:none;color:var(--text2);cursor:pointer;padding:4px 10px;font-size:20px;line-height:1">‹</button>
+        <div style="text-align:center">
+          <div style="font-size:16px;font-weight:700;color:var(--text)" id="cml"></div>
+          <div style="font-size:11px;color:var(--text3);margin-top:1px" id="chart-range-sub"></div>
+        </div>
+        <button onclick="chartChg(1)" style="background:none;border:none;color:var(--text2);cursor:pointer;padding:4px 10px;font-size:20px;line-height:1">›</button>
+      </div>
+      <!-- Custom range row (hidden by default) -->
+      <div id="chart-custom-range" style="display:none;padding-bottom:10px">
+        <div style="display:flex;gap:6px;align-items:center">
+          <input type="date" id="chart-from" style="flex:1;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-md);padding:7px 8px;font-size:13px;color:var(--text);outline:none;font-family:inherit">
+          <span style="color:var(--text3);font-size:13px;flex-shrink:0">至</span>
+          <input type="date" id="chart-to" style="flex:1;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-md);padding:7px 8px;font-size:13px;color:var(--text);outline:none;font-family:inherit">
+          <button onclick="applyCustomRange()" style="flex-shrink:0;padding:7px 10px;background:var(--blue);color:#fff;border:none;border-radius:var(--r-md);font-size:13px;cursor:pointer;font-family:inherit">套用</button>
         </div>
       </div>
     </div>
-    <!-- ⑧ filter bar -->
-
-    <div class="scroll" style="flex:1;min-height:0;padding:10px 15px 16px;touch-action:pan-y;-webkit-overflow-scrolling:touch" id="chart-content"></div>
+    <!-- Scrollable content -->
+    <div style="flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;overscroll-behavior:contain;padding:10px 14px 16px" id="chart-content"></div>
     <div class="bnav">
       <button class="nb" onclick="go('home')"><i class="ti ti-home"></i>首頁</button>
       <button class="nb" onclick="go('ledger')"><i class="ti ti-receipt"></i>明細</button>

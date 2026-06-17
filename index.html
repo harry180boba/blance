@@ -28,8 +28,7 @@
 html{height:100%;overflow:hidden;background:var(--bg)}body{background:var(--bg);font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;display:flex;justify-content:center;height:100%;overflow:hidden;touch-action:manipulation}
 .app{width:100%;max-width:430px;background:var(--bg);display:flex;flex-direction:column;position:fixed;top:0;left:0;right:0;bottom:0;margin:0 auto;overflow:hidden}
 .screen{display:none;flex-direction:column;position:absolute;top:0;left:0;right:0;bottom:calc(62px + env(safe-area-inset-bottom,0px));overflow:hidden}
-.screen.active{display:flex;animation:screenIn .22s ease}
-@keyframes screenIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.screen.active{display:flex}
 
 /* AUTH */
 .auth-wrap{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px}
@@ -136,8 +135,6 @@ html{height:100%;overflow:hidden;background:var(--bg)}body{background:var(--bg);
 .divline{height:0.5px;background:var(--border);margin:3px 12px}
 /* ② 明細滾動 */
 .txp{overflow-y:auto;flex:1;padding:0 12px 6px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
-.txp-fade{animation:txpFade .18s ease}
-@keyframes txpFade{from{opacity:0}to{opacity:1}}
 .tx-dh{display:flex;justify-content:space-between;align-items:center;padding:8px 0 5px;position:sticky;top:0;background:var(--bg);z-index:1}
 .tx-dh .dl{font-size:12px;font-weight:600;color:var(--text2)}
 .tx-dh .ds{font-size:11px;color:var(--text3)}
@@ -353,7 +350,7 @@ html{height:100%;overflow:hidden;background:var(--bg)}body{background:var(--bg);
       <button class="nb" onclick="go('settings')"><i class="ti ti-settings"></i>設定</button>
     </div>
     <!-- Home FAB: fixed above bnav -->
-    <button id="home-fab" onclick="go('add')" style="position:absolute;right:18px;bottom:calc(62px + env(safe-area-inset-bottom,0px) + 14px);width:52px;height:52px;border-radius:50%;background:var(--blue);color:#fff;border:none;box-shadow:0 4px 16px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:60;font-size:24px;line-height:1"><i class="ti ti-plus"></i></button>
+    <button id="home-fab" onclick="go('add')" style="position:absolute;right:18px;bottom:16px;width:52px;height:52px;border-radius:50%;background:var(--blue);color:#fff;border:none;box-shadow:0 4px 16px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:60;font-size:24px;line-height:1"><i class="ti ti-plus"></i></button>
   </div>
 
   <!-- LEDGER -->
@@ -379,6 +376,7 @@ html{height:100%;overflow:hidden;background:var(--bg)}body{background:var(--bg);
         <div style="display:flex;align-items:center;gap:6px">
           <button class="mnav-btn" onclick="chgM(-1)"><i class="ti ti-chevron-left"></i></button>
           <button class="mnav-btn" onclick="chgM(1)"><i class="ti ti-chevron-right"></i></button>
+          <button onclick="go('add')" style="width:34px;height:34px;border-radius:50%;background:var(--blue);color:#fff;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:20px;line-height:1;margin-left:2px"><i class="ti ti-plus"></i></button>
         </div>
       </div>
     </div>
@@ -393,10 +391,10 @@ html{height:100%;overflow:hidden;background:var(--bg)}body{background:var(--bg);
     <div class="divline" style="flex-shrink:0"></div>
     <div class="txp" id="txp" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding-bottom:80px"></div>
 
-        <div class="bnav">
+    <div class="bnav">
       <button class="nb" onclick="go('home')"><i class="ti ti-home"></i>首頁</button>
       <button class="nb" onclick="go('ledger')"><i class="ti ti-receipt"></i>明細</button>
-      <button class="nb on" onclick="go('add')"><i class="ti ti-plus" style="font-size:24px"></i>記一筆</button>
+      <button class="nb on" onclick="go('cal')"><i class="ti ti-calendar"></i>月曆</button>
       <button class="nb" onclick="go('chart')"><i class="ti ti-chart-pie"></i>統計</button>
       <button class="nb" onclick="go('settings')"><i class="ti ti-settings"></i>設定</button>
     </div>
@@ -975,22 +973,18 @@ function applyYearMonth(){
 }
 
 function renderCalSum(){
-  // sum-row (收入/支出/結餘 cards) was removed from the calendar screen.
-  // Guard every element lookup so this never throws if the elements don't exist.
   const mk=curY+'-'+pad(curM+1);const list=txs.filter(t=>t.date.startsWith(mk));
   const inc=list.filter(t=>t.type==='income'&&t.category!=='adjust').reduce((a,t)=>a+Number(t.amount),0);
   const exp=list.filter(t=>t.type==='expense'&&t.category!=='adjust').reduce((a,t)=>a+Number(t.amount),0);
-  const siEl=document.getElementById('si');if(siEl)siEl.textContent=fmt(inc);
-  const seEl=document.getElementById('se');if(seEl)seEl.textContent=fmt(exp);
-  const sbEl=document.getElementById('sb');
-  if(sbEl){const b=inc-exp;sbEl.textContent=fmt(Math.abs(b));sbEl.style.color=b>=0?'var(--green)':'var(--red)';}
+  document.getElementById('si').textContent=fmt(inc);document.getElementById('se').textContent=fmt(exp);
+  const el=document.getElementById('sb'),b=inc-exp;el.textContent=fmt(Math.abs(b));el.style.color=b>=0?'var(--green)':'var(--red)';
 }
 
 function buildCalHTML(y,m){
   const today=new Date();const fd=new Date(y,m,1).getDay(),dim=new Date(y,m+1,0).getDate(),dimp=new Date(y,m,0).getDate();
   const mk=y+'-'+pad(m+1);const bd={};
   txs.filter(t=>t.date.startsWith(mk)).forEach(t=>{if(!bd[t.date])bd[t.date]={i:0,e:0};if(t.type==='income')bd[t.date].i+=Number(t.amount);else bd[t.date].e+=Number(t.amount);});
-  const tot=42; // 固定 6 列 x 7 天 = 42格，月底自動延伸顯示下個月開頭日期
+  const tot=Math.ceil((fd+dim)/7)*7;
   let h='<div class="wdays"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div><div class="cgrid">';
   for(let i=0;i<tot;i++){
     let day,mo=m,yr=y,om=false;
@@ -1019,9 +1013,6 @@ function selDate2(d){selDate=selDate===d?null:d;renderCalPages();renderTxPanel()
 
 function renderTxPanel(){
   const panel=document.getElementById('txp');
-  panel.classList.remove('txp-fade');
-  void panel.offsetWidth; // force reflow so animation restarts
-  panel.classList.add('txp-fade');
   const mk=curY+'-'+pad(curM+1);
   const list=selDate?txs.filter(t=>t.date===selDate):txs.filter(t=>t.date.startsWith(mk));
   const title=selDate?fmtDay(selDate):'本月所有交易';
@@ -1738,7 +1729,7 @@ function applyBnavOffset(px){
   });
 
   const hfab=document.getElementById('home-fab');
-  if(hfab)hfab.style.bottom='calc(62px + env(safe-area-inset-bottom,0px) + 14px)';
+  if(hfab)hfab.style.bottom='16px';
   const nm=document.getElementById('bnav-offset-num');if(nm)nm.value=n;
 }
 function syncOffsetFromNum(v){

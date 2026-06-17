@@ -28,7 +28,8 @@
 html{height:100%;overflow:hidden;background:var(--bg)}body{background:var(--bg);font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;display:flex;justify-content:center;height:100%;overflow:hidden;touch-action:manipulation}
 .app{width:100%;max-width:430px;background:var(--bg);display:flex;flex-direction:column;position:fixed;top:0;left:0;right:0;bottom:0;margin:0 auto;overflow:hidden}
 .screen{display:none;flex-direction:column;position:absolute;top:0;left:0;right:0;bottom:calc(62px + env(safe-area-inset-bottom,0px));overflow:hidden}
-.screen.active{display:flex}
+.screen.active{display:flex;animation:screenIn .22s ease}
+@keyframes screenIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 
 /* AUTH */
 .auth-wrap{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px}
@@ -135,6 +136,8 @@ html{height:100%;overflow:hidden;background:var(--bg)}body{background:var(--bg);
 .divline{height:0.5px;background:var(--border);margin:3px 12px}
 /* ② 明細滾動 */
 .txp{overflow-y:auto;flex:1;padding:0 12px 6px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+.txp-fade{animation:txpFade .18s ease}
+@keyframes txpFade{from{opacity:0}to{opacity:1}}
 .tx-dh{display:flex;justify-content:space-between;align-items:center;padding:8px 0 5px;position:sticky;top:0;background:var(--bg);z-index:1}
 .tx-dh .dl{font-size:12px;font-weight:600;color:var(--text2)}
 .tx-dh .ds{font-size:11px;color:var(--text3)}
@@ -376,7 +379,6 @@ html{height:100%;overflow:hidden;background:var(--bg)}body{background:var(--bg);
         <div style="display:flex;align-items:center;gap:6px">
           <button class="mnav-btn" onclick="chgM(-1)"><i class="ti ti-chevron-left"></i></button>
           <button class="mnav-btn" onclick="chgM(1)"><i class="ti ti-chevron-right"></i></button>
-          <button onclick="go('add')" style="width:34px;height:34px;border-radius:50%;background:var(--blue);color:#fff;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:20px;line-height:1;margin-left:2px"><i class="ti ti-plus"></i></button>
         </div>
       </div>
     </div>
@@ -391,10 +393,10 @@ html{height:100%;overflow:hidden;background:var(--bg)}body{background:var(--bg);
     <div class="divline" style="flex-shrink:0"></div>
     <div class="txp" id="txp" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding-bottom:80px"></div>
 
-    <div class="bnav">
+        <div class="bnav">
       <button class="nb" onclick="go('home')"><i class="ti ti-home"></i>首頁</button>
       <button class="nb" onclick="go('ledger')"><i class="ti ti-receipt"></i>明細</button>
-      <button class="nb on" onclick="go('cal')"><i class="ti ti-calendar"></i>月曆</button>
+      <button class="nb on" onclick="go('add')"><i class="ti ti-plus" style="font-size:24px"></i>記一筆</button>
       <button class="nb" onclick="go('chart')"><i class="ti ti-chart-pie"></i>統計</button>
       <button class="nb" onclick="go('settings')"><i class="ti ti-settings"></i>設定</button>
     </div>
@@ -1017,6 +1019,9 @@ function selDate2(d){selDate=selDate===d?null:d;renderCalPages();renderTxPanel()
 
 function renderTxPanel(){
   const panel=document.getElementById('txp');
+  panel.classList.remove('txp-fade');
+  void panel.offsetWidth; // force reflow so animation restarts
+  panel.classList.add('txp-fade');
   const mk=curY+'-'+pad(curM+1);
   const list=selDate?txs.filter(t=>t.date===selDate):txs.filter(t=>t.date.startsWith(mk));
   const title=selDate?fmtDay(selDate):'本月所有交易';

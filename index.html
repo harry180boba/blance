@@ -1709,8 +1709,14 @@ async function deleteGlobalTag(tag){
 /* ── BNAV OFFSET ── */
 function applyBnavOffset(px){
   const n=parseInt(px)||0;
-  document.querySelectorAll('.bnav').forEach(function(el){el.style.paddingBottom=Math.max(0,n)+'px';el.style.marginBottom=Math.min(0,n)+'px';});
-  document.querySelectorAll('.screen').forEach(function(el){el.style.bottom='calc('+(62+n)+'px + env(safe-area-inset-bottom,0px))';});
+  // Move the ENTIRE bnav up/down: negative n = move bnav down (closer to physical bottom)
+  document.querySelectorAll('.bnav').forEach(function(el){
+    el.style.bottom='calc('+(n)+'px + env(safe-area-inset-bottom,0px))';
+  });
+  // Screens still need to leave room for the bnav at its new position
+  document.querySelectorAll('.screen').forEach(function(el){
+    el.style.bottom='calc('+(62+n)+'px + env(safe-area-inset-bottom,0px))';
+  });
   const hfab=document.getElementById('home-fab');
   if(hfab)hfab.style.bottom='16px';
   const nm=document.getElementById('bnav-offset-num');if(nm)nm.value=n;

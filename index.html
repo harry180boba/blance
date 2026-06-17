@@ -350,7 +350,7 @@ html{height:100%;overflow:hidden;background:var(--bg)}body{background:var(--bg);
       <button class="nb" onclick="go('settings')"><i class="ti ti-settings"></i>設定</button>
     </div>
     <!-- Home FAB: fixed above bnav -->
-    <button id="home-fab" onclick="go('add')" style="position:absolute;right:18px;bottom:16px;width:52px;height:52px;border-radius:50%;background:var(--blue);color:#fff;border:none;box-shadow:0 4px 16px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:60;font-size:24px;line-height:1"><i class="ti ti-plus"></i></button>
+    <button id="home-fab" onclick="go('add')" style="position:absolute;right:18px;bottom:calc(62px + env(safe-area-inset-bottom,0px) + 14px);width:52px;height:52px;border-radius:50%;background:var(--blue);color:#fff;border:none;box-shadow:0 4px 16px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:60;font-size:24px;line-height:1"><i class="ti ti-plus"></i></button>
   </div>
 
   <!-- LEDGER -->
@@ -532,14 +532,14 @@ html{height:100%;overflow:hidden;background:var(--bg)}body{background:var(--bg);
       <div class="setting-row" style="flex-direction:column;align-items:stretch;gap:8px;cursor:default">
         <div class="setting-row-left"><i class="ti ti-layout-bottombar" style="color:var(--blue)"></i>底部間距調整</div>
         <div style="display:flex;align-items:center;gap:8px">
-          <input type="number" id="bnav-offset-num" value="0" min="-40" max="40"
+          <input type="number" id="bnav-offset-num" value="-75" min="-90" max="90"
             style="width:80px;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-md);padding:7px 10px;font-size:15px;font-weight:700;color:var(--blue);text-align:center;font-family:inherit;outline:none"
             oninput="syncOffsetFromNum(this.value)"
             onchange="saveBnavOffset(this.value)">
           <span style="font-size:13px;color:var(--text2)">px</span>
           <button onclick="saveBnavOffset(0);document.getElementById('bnav-offset-slider').value=0;document.getElementById('bnav-offset-num').value=0;" style="margin-left:auto;padding:6px 12px;border:0.5px solid var(--border2);border-radius:var(--r-md);background:none;color:var(--text2);font-size:12px;cursor:pointer;font-family:inherit">重置</button>
         </div>
-        <div style="font-size:11px;color:var(--text3);margin-top:4px">範圍 -40 ~ +40 px，導覽列固定不會消失，輸入後即時生效</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">範圍 -90 ~ +90 px，畫面內容永遠不會被遮住，輸入後即時生效</div>
       </div>
       <div class="setting-section-label" style="margin-top:16px">匯出資料</div>
       <div class="setting-row" onclick="exportCSV()">
@@ -973,18 +973,22 @@ function applyYearMonth(){
 }
 
 function renderCalSum(){
+  // sum-row (收入/支出/結餘 cards) was removed from the calendar screen.
+  // Guard every element lookup so this never throws if the elements don't exist.
   const mk=curY+'-'+pad(curM+1);const list=txs.filter(t=>t.date.startsWith(mk));
   const inc=list.filter(t=>t.type==='income'&&t.category!=='adjust').reduce((a,t)=>a+Number(t.amount),0);
   const exp=list.filter(t=>t.type==='expense'&&t.category!=='adjust').reduce((a,t)=>a+Number(t.amount),0);
-  document.getElementById('si').textContent=fmt(inc);document.getElementById('se').textContent=fmt(exp);
-  const el=document.getElementById('sb'),b=inc-exp;el.textContent=fmt(Math.abs(b));el.style.color=b>=0?'var(--green)':'var(--red)';
+  const siEl=document.getElementById('si');if(siEl)siEl.textContent=fmt(inc);
+  const seEl=document.getElementById('se');if(seEl)seEl.textContent=fmt(exp);
+  const sbEl=document.getElementById('sb');
+  if(sbEl){const b=inc-exp;sbEl.textContent=fmt(Math.abs(b));sbEl.style.color=b>=0?'var(--green)':'var(--red)';}
 }
 
 function buildCalHTML(y,m){
   const today=new Date();const fd=new Date(y,m,1).getDay(),dim=new Date(y,m+1,0).getDate(),dimp=new Date(y,m,0).getDate();
   const mk=y+'-'+pad(m+1);const bd={};
   txs.filter(t=>t.date.startsWith(mk)).forEach(t=>{if(!bd[t.date])bd[t.date]={i:0,e:0};if(t.type==='income')bd[t.date].i+=Number(t.amount);else bd[t.date].e+=Number(t.amount);});
-  const tot=Math.ceil((fd+dim)/7)*7;
+  const tot=42; // 固定 6 列 x 7 天 = 42格，月底自動延伸顯示下個月開頭日期
   let h='<div class="wdays"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div><div class="cgrid">';
   for(let i=0;i<tot;i++){
     let day,mo=m,yr=y,om=false;
@@ -1710,19 +1714,26 @@ async function deleteGlobalTag(tag){
 function applyBnavOffset(px){
   let n=parseInt(px);
   if(isNaN(n))n=0;
-  n=Math.max(-40,Math.min(40,n)); // clamp to safe range, bnav can NEVER go off-screen
-  // bnav itself ALWAYS stays bottom:0 (fixed, never disappears).
-  // n only adjusts the EXTRA bottom padding inside bnav (visual fine-tune for home indicator).
+  n=Math.max(-90,Math.min(90,n)); // wide range allowed, but math below guarantees safety
+
+  // bnav ALWAYS stays bottom:0 — its position never changes, so it can never disappear.
+  // n only changes its INTERNAL bottom padding (how close icons sit to the physical edge).
+  // We clamp the padding itself to a safe minimum of 4px so bnav never collapses to 0 height.
+  const basePad=8; // normal padding-bottom in px (matches CSS default)
+  const newPad=Math.max(4, basePad+n); // never goes below 4px, regardless of how negative n is
   document.querySelectorAll('.bnav').forEach(function(el){
     el.style.bottom='0px';
-    el.style.paddingBottom='calc(env(safe-area-inset-bottom,0px) + '+Math.max(0,8+n)+'px)';
+    el.style.paddingBottom='calc(env(safe-area-inset-bottom,0px) + '+newPad+'px)';
   });
-  // Screens keep a constant reserved space matching bnav's natural height
+
+  // Screens reserve a FIXED 62px always — completely independent of n.
+  // This guarantees screen content can NEVER collapse or go negative-height.
   document.querySelectorAll('.screen').forEach(function(el){
-    el.style.bottom='calc(62px + env(safe-area-inset-bottom,0px) + '+Math.max(0,n)+'px)';
+    el.style.bottom='calc(62px + env(safe-area-inset-bottom,0px))';
   });
+
   const hfab=document.getElementById('home-fab');
-  if(hfab)hfab.style.bottom='16px';
+  if(hfab)hfab.style.bottom='calc(62px + env(safe-area-inset-bottom,0px) + 14px)';
   const nm=document.getElementById('bnav-offset-num');if(nm)nm.value=n;
 }
 function syncOffsetFromNum(v){
@@ -1739,7 +1750,7 @@ function loadBnavOffset(){
     const v=localStorage.getItem('bnavOffset');
     if(v!==null){applyBnavOffset(parseInt(v));return;} // applyBnavOffset clamps to safe range
   }catch(e){}
-  applyBnavOffset(0); // safe default - bnav always visible
+  applyBnavOffset(-75); // default
 }
 
 /* ── BOOT ── */

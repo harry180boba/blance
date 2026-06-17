@@ -27,7 +27,7 @@
 }}
 html{height:100%;overflow:hidden;background:var(--bg)}body{background:var(--bg);font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;display:flex;justify-content:center;height:100%;overflow:hidden;touch-action:manipulation}
 .app{width:100%;max-width:430px;background:var(--bg);display:flex;flex-direction:column;position:fixed;top:0;left:0;right:0;bottom:0;margin:0 auto;overflow:hidden}
-.screen{display:none;flex-direction:column;position:absolute;top:0;left:0;right:0;bottom:calc(56px + env(safe-area-inset-bottom,0px));overflow:hidden}
+.screen{display:none;flex-direction:column;position:absolute;top:0;left:0;right:0;bottom:calc(62px + env(safe-area-inset-bottom,0px));overflow:hidden}
 .screen.active{display:flex}
 
 /* AUTH */
@@ -317,7 +317,7 @@ html{height:100%;overflow:hidden;background:var(--bg)}body{background:var(--bg);
         <button class="icon-btn" onclick="openManageAccts()"><i class="ti ti-settings"></i>帳戶</button>
       </div>
     </div>
-    <div class="scroll" style="flex:1;min-height:0">
+    <div class="scroll" style="flex:1;min-height:0;padding-bottom:80px">
       <div class="net-wrap">
         <div>
           <div class="net-lbl">淨資產</div>
@@ -349,6 +349,8 @@ html{height:100%;overflow:hidden;background:var(--bg)}body{background:var(--bg);
       <button class="nb" onclick="go('chart')"><i class="ti ti-chart-pie"></i>統計</button>
       <button class="nb" onclick="go('settings')"><i class="ti ti-settings"></i>設定</button>
     </div>
+    <!-- Home FAB: fixed above bnav -->
+    <button id="home-fab" onclick="go('add')" style="position:absolute;right:18px;bottom:calc(62px + env(safe-area-inset-bottom,0px) + 12px);width:52px;height:52px;border-radius:50%;background:var(--blue);color:#fff;border:none;box-shadow:0 4px 16px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:60;font-size:24px;line-height:1"><i class="ti ti-plus"></i></button>
   </div>
 
   <!-- LEDGER -->
@@ -356,7 +358,7 @@ html{height:100%;overflow:hidden;background:var(--bg)}body{background:var(--bg);
     <div class="hdr" style="flex-shrink:0"><div class="hdr-row"><h2>所有明細</h2></div></div>
     <div class="ledger-search" style="flex-shrink:0"><input type="text" id="ledger-q" placeholder="🔍 搜尋備註、分類…" oninput="renderLedger()"></div>
     <div class="lfilter-bar" id="lfilter-bar" style="flex-shrink:0"></div>
-    <div class="scroll" id="ledger-list" style="flex:1;min-height:0;padding:0 12px 16px"></div>
+    <div class="scroll" id="ledger-list" style="flex:1;min-height:0;padding:0 12px 80px"></div>
     <div class="bnav">
       <button class="nb" onclick="go('home')"><i class="ti ti-home"></i>首頁</button>
       <button class="nb on" onclick="go('ledger')"><i class="ti ti-receipt"></i>明細</button>
@@ -371,17 +373,14 @@ html{height:100%;overflow:hidden;background:var(--bg)}body{background:var(--bg);
     <div class="hdr" style="flex-shrink:0">
       <div class="cal-hdr-row">
         <button id="mtitle" class="mtitle" onclick="jumpToToday()" style="background:none;border:none;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:4px"></button>
-        <div style="display:flex;align-items:center;gap:2px">
+        <div style="display:flex;align-items:center;gap:6px">
           <button class="mnav-btn" onclick="chgM(-1)"><i class="ti ti-chevron-left"></i></button>
           <button class="mnav-btn" onclick="chgM(1)"><i class="ti ti-chevron-right"></i></button>
+          <button onclick="go('add')" style="width:34px;height:34px;border-radius:50%;background:var(--blue);color:#fff;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:20px;line-height:1;margin-left:2px"><i class="ti ti-plus"></i></button>
         </div>
       </div>
     </div>
-    <div class="sum-row" style="flex-shrink:0">
-      <div class="sm"><div class="sm-l">收入</div><div class="sm-v" style="color:var(--green)" id="si">0</div></div>
-      <div class="sm"><div class="sm-l">支出</div><div class="sm-v" style="color:var(--red)" id="se">0</div></div>
-      <div class="sm"><div class="sm-l">結餘</div><div class="sm-v" id="sb">0</div></div>
-    </div>
+
     <div class="cal-outer" id="co" style="flex-shrink:0">
       <div class="cal-track" id="ct">
         <div class="cal-page" id="cp-p"></div>
@@ -390,7 +389,7 @@ html{height:100%;overflow:hidden;background:var(--bg)}body{background:var(--bg);
       </div>
     </div>
     <div class="divline" style="flex-shrink:0"></div>
-    <div class="txp" id="txp" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding-bottom:8px"></div>
+    <div class="txp" id="txp" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding-bottom:80px"></div>
 
     <div class="bnav">
       <button class="nb" onclick="go('home')"><i class="ti ti-home"></i>首頁</button>
@@ -399,10 +398,7 @@ html{height:100%;overflow:hidden;background:var(--bg)}body{background:var(--bg);
       <button class="nb" onclick="go('chart')"><i class="ti ti-chart-pie"></i>統計</button>
       <button class="nb" onclick="go('settings')"><i class="ti ti-settings"></i>設定</button>
     </div>
-    <!-- FAB: always visible on cal screen -->
-    <button id="cal-fab" onclick="go('add')" style="position:absolute;right:18px;bottom:calc(56px + env(safe-area-inset-bottom,0px) + 14px);width:52px;height:52px;border-radius:50%;background:var(--blue);color:#fff;border:none;box-shadow:0 4px 16px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:60;font-size:26px;line-height:1">
-      <i class="ti ti-plus"></i>
-    </button>
+
   </div>
 
   <!-- ADD -->
@@ -414,7 +410,7 @@ html{height:100%;overflow:hidden;background:var(--bg)}body{background:var(--bg);
         <button class="save-btn" onclick="saveTx()">儲存</button>
       </div>
     </div>
-    <div class="scroll" style="flex:1;min-height:0">
+    <div class="scroll" style="flex:1;min-height:0;padding-bottom:80px">
       <div class="type-sw">
         <button class="tbtn ae" id="tb-e" onclick="setType('expense')">支出</button>
         <button class="tbtn" id="tb-i" onclick="setType('income')">收入</button>
@@ -496,7 +492,7 @@ html{height:100%;overflow:hidden;background:var(--bg)}body{background:var(--bg);
       </div>
     </div>
     <!-- Scrollable content -->
-    <div style="flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;overscroll-behavior:contain;padding:10px 14px 16px" id="chart-content"></div>
+    <div style="flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;overscroll-behavior:contain;padding:10px 14px 80px" id="chart-content"></div>
     <div class="bnav">
       <button class="nb" onclick="go('home')"><i class="ti ti-home"></i>首頁</button>
       <button class="nb" onclick="go('ledger')"><i class="ti ti-receipt"></i>明細</button>
@@ -509,7 +505,7 @@ html{height:100%;overflow:hidden;background:var(--bg)}body{background:var(--bg);
   <!-- SETTINGS -->
   <div class="screen" id="sc-settings">
     <div class="hdr" style="flex-shrink:0"><div class="hdr-row"><h2>設定</h2></div></div>
-    <div class="scroll" style="flex:1;min-height:0;padding:14px 15px 16px">
+    <div class="scroll" style="flex:1;min-height:0;padding:14px 15px 80px">
       <div class="setting-section-label">帳號</div>
       <div class="setting-row" style="cursor:default">
         <div class="setting-row-left"><i class="ti ti-user"></i><span id="user-email-display">—</span></div>
@@ -535,14 +531,21 @@ html{height:100%;overflow:hidden;background:var(--bg)}body{background:var(--bg);
       <div class="setting-section-label" style="margin-top:16px">介面</div>
       <div class="setting-row" style="flex-direction:column;align-items:stretch;gap:8px;cursor:default">
         <div class="setting-row-left"><i class="ti ti-layout-bottombar" style="color:var(--blue)"></i>底部間距調整</div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <input type="range" id="bnav-offset-slider" min="-90" max="60" step="1" value="0"
-            style="flex:1;accent-color:var(--blue);cursor:pointer"
-            oninput="previewBnavOffset(this.value)"
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <input type="range" id="bnav-offset-slider" min="-90" max="90" step="1" value="0"
+            style="flex:1;accent-color:var(--blue);cursor:pointer;height:20px"
+            oninput="syncOffsetFromSlider(this.value)"
             onchange="saveBnavOffset(this.value)">
-          <span id="bnav-offset-val" style="font-size:13px;font-weight:700;color:var(--blue);min-width:36px;text-align:right">0 px</span>
         </div>
-        <div style="font-size:11px;color:var(--text3)">若底部有空白，往右調直到貼合</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input type="number" id="bnav-offset-num" value="0" min="-90" max="90"
+            style="width:80px;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-md);padding:7px 10px;font-size:15px;font-weight:700;color:var(--blue);text-align:center;font-family:inherit;outline:none"
+            oninput="syncOffsetFromNum(this.value)"
+            onchange="saveBnavOffset(this.value)">
+          <span style="font-size:13px;color:var(--text2)">px</span>
+          <button onclick="saveBnavOffset(0);document.getElementById('bnav-offset-slider').value=0;document.getElementById('bnav-offset-num').value=0;" style="margin-left:auto;padding:6px 12px;border:0.5px solid var(--border2);border-radius:var(--r-md);background:none;color:var(--text2);font-size:12px;cursor:pointer;font-family:inherit">重置</button>
+        </div>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">範圍 -90 ~ +90 px，改完即時生效</div>
       </div>
       <div class="setting-section-label" style="margin-top:16px">匯出資料</div>
       <div class="setting-row" onclick="exportCSV()">
@@ -608,6 +611,7 @@ function cmap(t){
   (t==='expense'?ECATS:ICATS).forEach(function(c){m[c.id]=c;});
   // Always include transfer so it renders correctly
   m['transfer']={id:'transfer',icon:'🔄',name:'轉帳'};
+  m['adjust']={id:'adjust',icon:'⚖️',name:'調整'};
   return m;
 }
 
@@ -865,8 +869,8 @@ function openAcctDetail(id){
   const a=accounts.find(x=>x.id===id);if(!a)return;
   const typ=at(a.type);
   const acTxs=txs.filter(t=>t.acct_id===id);
-  const inc=acTxs.filter(t=>t.type==='income').reduce((s,t)=>s+Number(t.amount),0);
-  const exp=acTxs.filter(t=>t.type==='expense').reduce((s,t)=>s+Number(t.amount),0);
+  const inc=acTxs.filter(t=>t.type==='income'&&t.category!=='adjust').reduce((s,t)=>s+Number(t.amount),0);
+  const exp=acTxs.filter(t=>t.type==='expense'&&t.category!=='adjust').reduce((s,t)=>s+Number(t.amount),0);
   showModal('<div style="text-align:center;margin-bottom:16px">'+
     '<div style="font-size:28px;margin-bottom:6px">'+typ.icon+'</div>'+
     '<div style="font-size:16px;font-weight:600;color:var(--text)">'+a.name+'</div>'+
@@ -880,7 +884,29 @@ function openAcctDetail(id){
     '<button class="mform-submit" onclick="saveAcctEdit(\''+id+'\')">儲存變更</button>'+
     '<button class="mform-del" onclick="deleteAcct(\''+id+'\')"><i class="ti ti-trash"></i> 刪除此帳戶</button></div>');
 }
-async function saveAcctEdit(id){const n=document.getElementById('ed-name').value.trim();const b=parseFloat(document.getElementById('ed-bal').value)||0;if(!n){toast('請輸入名稱');return;}const ok=await dbUpdateAccount(id,{name:n,balance:b});if(ok){closeModal();renderHome();toast('已更新');}}
+async function saveAcctEdit(id){
+  const n=document.getElementById('ed-name').value.trim();
+  const b=parseFloat(document.getElementById('ed-bal').value)||0;
+  if(!n){toast('請輸入名稱');return;}
+  const acct=accounts.find(function(a){return a.id===id;});
+  const oldBal=acct?Number(acct.balance):0;
+  const diff=b-oldBal;
+  const ok=await dbUpdateAccount(id,{name:n,balance:b});
+  if(ok){
+    // Record adjustment tx if balance changed
+    if(diff!==0){
+      const today=new Date();
+      const ds=today.getFullYear()+'-'+pad(today.getMonth()+1)+'-'+pad(today.getDate());
+      // Use type='income' to pass DB constraint, category='adjust' to exclude from totals
+      await dbAddTx({
+        type:'income',amount:Math.abs(diff),category:'adjust',
+        date:ds,note:'餘額調整 '+(diff>0?'+':'')+Number(diff).toLocaleString(),
+        acct_id:id,tags:['調整']
+      });
+    }
+    closeModal();renderHome();toast('已更新');
+  }
+}
 async function deleteAcct(id){if(!confirm('刪除此帳戶？'))return;const ok=await dbDeleteAccount(id);if(ok){closeModal();renderHome();toast('已刪除');}}
 
 function openAddAcct(type){
@@ -954,8 +980,8 @@ function applyYearMonth(){
 
 function renderCalSum(){
   const mk=curY+'-'+pad(curM+1);const list=txs.filter(t=>t.date.startsWith(mk));
-  const inc=list.filter(t=>t.type==='income').reduce((a,t)=>a+Number(t.amount),0);
-  const exp=list.filter(t=>t.type==='expense').reduce((a,t)=>a+Number(t.amount),0);
+  const inc=list.filter(t=>t.type==='income'&&t.category!=='adjust').reduce((a,t)=>a+Number(t.amount),0);
+  const exp=list.filter(t=>t.type==='expense'&&t.category!=='adjust').reduce((a,t)=>a+Number(t.amount),0);
   document.getElementById('si').textContent=fmt(inc);document.getElementById('se').textContent=fmt(exp);
   const el=document.getElementById('sb'),b=inc-exp;el.textContent=fmt(Math.abs(b));el.style.color=b>=0?'var(--green)':'var(--red)';
 }
@@ -997,8 +1023,8 @@ function renderTxPanel(){
   const list=selDate?txs.filter(t=>t.date===selDate):txs.filter(t=>t.date.startsWith(mk));
   const title=selDate?fmtDay(selDate):'本月所有交易';
   // Day summary bar (only when a date is selected)
-  const dayExp=list.filter(t=>t.type==='expense').reduce((s,t)=>s+Number(t.amount),0);
-  const dayInc=list.filter(t=>t.type==='income').reduce((s,t)=>s+Number(t.amount),0);
+  const dayExp=list.filter(t=>t.type==='expense'&&t.category!=='adjust').reduce((s,t)=>s+Number(t.amount),0);
+  const dayInc=list.filter(t=>t.type==='income'&&t.category!=='adjust').reduce((s,t)=>s+Number(t.amount),0);
   const dayNet=dayInc-dayExp;
   let summaryHTML='';
   if(selDate){
@@ -1015,8 +1041,8 @@ function renderTxPanel(){
   let h='<div class="tx-dh"><span class="dl">'+title+'</span><span class="ds">共 '+list.length+' 筆</span></div>'+summaryHTML;
   Object.entries(grp).sort((a,b)=>b[0].localeCompare(a[0])).forEach(([date,items])=>{
     if(!selDate){
-      const de=items.filter(t=>t.type==='expense').reduce((a,t)=>a+Number(t.amount),0);
-      const di=items.filter(t=>t.type==='income').reduce((a,t)=>a+Number(t.amount),0);
+      const de=items.filter(t=>t.type==='expense'&&t.category!=='adjust').reduce((a,t)=>a+Number(t.amount),0);
+      const di=items.filter(t=>t.type==='income'&&t.category!=='adjust').reduce((a,t)=>a+Number(t.amount),0);
       const p2=[];if(di>0)p2.push('<span style="color:var(--green)">+'+fmt(di)+'</span>');if(de>0)p2.push('<span style="color:var(--red)">-'+fmt(de)+'</span>');
       const dt=new Date(date+'T00:00:00');
       h+='<div class="tx-dh" style="padding-top:6px"><span class="dl">'+(dt.getMonth()+1)+'/'+dt.getDate()+' 週'+['日','一','二','三','四','五','六'][dt.getDay()]+'</span><span class="ds">'+p2.join(' ')+'</span></div>';
@@ -1496,12 +1522,12 @@ function renderChart(){
   const badge=document.getElementById('chart-tag-badge');
   if(badge){badge.style.display=chartFilter.tag?'block':'none';if(chartFilter.tag)badge.textContent='# '+chartFilter.tag;}
 
-  let list=txs.filter(mkFilter);
+  let list=txs.filter(mkFilter).filter(function(t){return t.category!=='adjust'&&t.category!=='transfer'&&!(t.tags||[]).includes('轉帳');});
   if(chartFilter.tag)list=list.filter(function(t){return (t.tags||[]).includes(chartFilter.tag);});
   const showType=chartFilter.type;
   const filtered=list.filter(function(t){return t.type===showType;});
-  const te=list.filter(function(t){return t.type==='expense';}).reduce(function(a,t){return a+Number(t.amount);},0);
-  const ti=list.filter(function(t){return t.type==='income';}).reduce(function(a,t){return a+Number(t.amount);},0);
+  const te=list.filter(function(t){return t.type==='expense'&&t.category!=='adjust';}).reduce(function(a,t){return a+Number(t.amount);},0);
+  const ti=list.filter(function(t){return t.type==='income'&&t.category!=='adjust';}).reduce(function(a,t){return a+Number(t.amount);},0);
   const cont=document.getElementById('chart-content');
   if(!list.length){cont.innerHTML='<div style="text-align:center;padding:60px 0;color:var(--text3);font-size:14px;line-height:2.5">此區間尚無資料<br>📊</div>';return;}
 
@@ -1633,8 +1659,8 @@ function renderLedger(){
   const cm=cmap('expense'),ci=cmap('income');
   Object.keys(grp).sort(function(a,b){return b.localeCompare(a);}).forEach(function(date){
     const items=grp[date];
-    const de=items.filter(function(t){return t.type==='expense';}).reduce(function(s,t){return s+Number(t.amount);},0);
-    const di=items.filter(function(t){return t.type==='income';}).reduce(function(s,t){return s+Number(t.amount);},0);
+    const de=items.filter(function(t){return t.type==='expense'&&t.category!=='adjust';}).reduce(function(s,t){return s+Number(t.amount);},0);
+    const di=items.filter(function(t){return t.type==='income'&&t.category!=='adjust';}).reduce(function(s,t){return s+Number(t.amount);},0);
     const dt=new Date(date+'T00:00:00');
     const dow=['日','一','二','三','四','五','六'][dt.getDay()];
     const p2=[];
@@ -1653,10 +1679,11 @@ function renderLedger(){
       const subTxt=cat.name+(acct?' · '+(atyp?atyp.icon:'')+' '+acct.name:'')+(tagHTML?' '+tagHTML:'');
       const row=document.createElement('div');
       row.className='txi';
-      row.innerHTML='<div class="txi-ic" style="background:'+(t.type==='income'?'var(--green-bg)':'var(--red-bg)')+'">'+cat.icon+'</div>'+
+      const isAdj=t.type==='adjust'||t.category==='adjust';
+      row.innerHTML='<div class="txi-ic" style="background:'+(isAdj?'var(--bg3)':t.type==='income'?'var(--green-bg)':'var(--red-bg)')+'">'+cat.icon+'</div>'+
         '<div class="txi-info"><div class="txi-name">'+(t.note||cat.name)+'</div>'+
         '<div class="txi-sub">'+subTxt+'</div></div>'+
-        '<div class="txi-amt '+(t.type==='income'?'i':'e')+'">'+(t.type==='income'?'+':'-')+fmt(Number(t.amount))+'</div>';
+        '<div class="txi-amt '+(isAdj?'':t.type==='income'?'i':'e')+'" style="'+(isAdj?'color:var(--text2)':'')+'">'+fmt(Number(t.amount))+'</div>';
       row.onclick=(function(tid){return function(){openTxDetail(tid);};})(t.id);
       container.appendChild(row);
     });
@@ -1688,16 +1715,32 @@ async function deleteGlobalTag(tag){
 /* ── BNAV OFFSET ── */
 function applyBnavOffset(px){
   const n=parseInt(px)||0;
-  document.querySelectorAll('.bnav').forEach(function(el){el.style.paddingBottom=n+'px';});
-  document.querySelectorAll('.screen').forEach(function(el){el.style.bottom='calc('+(56+n)+'px + env(safe-area-inset-bottom,0px))';});
+  document.querySelectorAll('.bnav').forEach(function(el){el.style.paddingBottom=Math.max(0,n)+'px';el.style.marginBottom=Math.min(0,n)+'px';});
+  document.querySelectorAll('.screen').forEach(function(el){el.style.bottom='calc('+(62+n)+'px + env(safe-area-inset-bottom,0px))';});
   const fab=document.getElementById('cal-fab');
   if(fab)fab.style.bottom='calc('+(70+n)+'px + env(safe-area-inset-bottom,0px))';
-  const s=document.getElementById('bnav-offset-slider');if(s)s.value=n;
-  const l=document.getElementById('bnav-offset-val');if(l)l.textContent=n+' px';
+  const hfab=document.getElementById('home-fab');
+  if(hfab)hfab.style.bottom='calc('+(62+n+12)+'px + env(safe-area-inset-bottom,0px))';
+  const sl=document.getElementById('bnav-offset-slider');if(sl)sl.value=n;
+  const nm=document.getElementById('bnav-offset-num');if(nm)nm.value=n;
 }
-function previewBnavOffset(v){document.getElementById('bnav-offset-val').textContent=v+' px';applyBnavOffset(v);}
-function saveBnavOffset(v){localStorage.setItem('bnavOffset',v);applyBnavOffset(v);}
-function loadBnavOffset(){const v=localStorage.getItem('bnavOffset');if(v!==null)applyBnavOffset(parseInt(v));}
+function syncOffsetFromSlider(v){
+  const nm=document.getElementById('bnav-offset-num');if(nm)nm.value=v;
+  applyBnavOffset(v);
+}
+function syncOffsetFromNum(v){
+  const n=parseInt(v)||0;
+  const sl=document.getElementById('bnav-offset-slider');if(sl)sl.value=Math.min(90,Math.max(-90,n));
+  applyBnavOffset(n);
+}
+function saveBnavOffset(v){
+  const n=parseInt(v)||0;
+  try{localStorage.setItem('bnavOffset',String(n));}catch(e){}
+  applyBnavOffset(n);
+}
+function loadBnavOffset(){
+  try{const v=localStorage.getItem('bnavOffset');if(v!==null){applyBnavOffset(parseInt(v));return;}}catch(e){}
+}
 
 /* ── BOOT ── */
 function hideSplash(){const s=document.getElementById('splash');if(s)s.style.display='none';}

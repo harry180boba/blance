@@ -99,6 +99,7 @@ input,select,textarea{font-family:inherit;font-weight:600;color:var(--ink)}
 .sheet-action{font-weight:800;font-size:14px;color:#fff;background:var(--brand);border-radius:999px;padding:8px 16px;box-shadow:0 4px 12px rgba(108,79,224,.32);white-space:nowrap}
 .sheet-action:active{transform:scale(.96)}
 .sheet .sh-body{overflow-y:auto;overflow-x:hidden;padding:0 18px 18px}
+.date-sep{position:sticky;top:0;z-index:2;background:var(--surface);font-size:11.5px;font-weight:800;color:var(--ink-3);padding:8px 2px 4px;margin-bottom:4px}
 
 label.fld{display:block;margin:14px 0 0}
 .fld{margin:14px 0 0}
@@ -210,9 +211,32 @@ details summary{font-weight:800;font-size:13px;color:var(--brand-ink);cursor:poi
 /* ============================================================
    記帳 MoneyBook
    ============================================================ */
-const VERSION = "1.12.0";
-const SCHEMA = 9;
+const VERSION = "1.14.5";
+const SCHEMA = 10;
 const CHANGELOG = [
+  {v:"1.14.5", d:"2026-06-18", items:[
+    "帳戶明細與報表分類明細的日期標頭改為置頂（sticky），捲動時日期不會被刷走"
+  ]},
+  {v:"1.14.4", d:"2026-06-18", items:[
+    "帳戶近30天明細也改為依日期分組，同一天的交易接續列出，日期只在每組開頭顯示一次"
+  ]},
+  {v:"1.14.3", d:"2026-06-18", items:[
+    "報表分類明細改為依日期分組，同一天的交易會接續列在一起，日期只在每組開頭顯示一次"
+  ]},
+  {v:"1.14.2", d:"2026-06-18", items:[
+    "報表點分類進去的明細加上日期顯示，並改為唯讀（不可點擊編輯），單純供查閱"
+  ]},
+  {v:"1.14.1", d:"2026-06-18", items:[
+    "交易明細的「複製」「刪除」移到標頭與「儲存」按鈕並排，不用再往下捲動操作"
+  ]},
+  {v:"1.14.0", d:"2026-06-18", items:[
+    "對帳改為逐筆比對：點「對帳」進入該期帳單的交易清單，可一筆一筆打勾核對，並顯示「已核對 X/Y 筆」進度",
+    "新增「延後至下期帳單」：某筆交易其實該算在下一期時，可一鍵移到下一期帳單，不影響本期金額；也可隨時復原",
+    "記帳時若信用卡帳戶設有多個卡別，卡別改為必選，不會再出現空白未指定的情況"
+  ]},
+  {v:"1.13.0", d:"2026-06-18", items:[
+    "帳單與繳費列表預設只顯示本期與上一期，更早的歷史帳單收合在「顯示更早的帳單」按鈕內，需要時再展開"
+  ]},
   {v:"1.12.0", d:"2026-06-18", items:[
     "信用卡帳戶新增「帳單週期」設定（結帳日／繳款日），自動依月份切出每期帳單",
     "新增「帳單與繳費」頁面：可查看每期帳單金額、繳款期限、狀態（累積中／待繳款／已逾期／已繳清）",
@@ -398,6 +422,12 @@ function migrate(d){
     if(a.autoPayAccountId===undefined) a.autoPayAccountId=null;
   });
   d.cardRecon = d.cardRecon || {};
+  if(d.schema<10){
+    d.txnRecon = d.txnRecon || {};
+    d.transactions.forEach(t=>{ if(t.statementOverride===undefined) t.statementOverride=null; });
+    d.schema = 10;
+  }
+  d.txnRecon = d.txnRecon || {};
   d.transactions.forEach(t=>{ if(!Array.isArray(t.tagIds)) t.tagIds=[]; });
   d.version=VERSION;
   return d;
@@ -435,6 +465,7 @@ function seed(){
     transactions:[],
     recurring:[],
     cardRecon:{},
+    txnRecon:{},
     settings:{created:Date.now(), fxRates:{...DEFAULT_FX}}
   };
 }
@@ -544,13 +575,25 @@ function listRecentCycles(a, count){
   }
   return cycles;
 }
-function cycleSpent(accountId, start, end){
-  const s=dstr(start), e=dstr(end); let v=0;
-  S.transactions.forEach(t=>{
-    if(t.accountId!==accountId || t.date<s || t.date>e) return;
-    if(t.type==="expense") v+=t.amount; else if(t.type==="income") v-=t.amount;
-  });
+function transactionCycleKey(t, a){
+  if(t.statementOverride) return t.statementOverride;
+  const billingDay=clampDay(a.billingDay);
+  const end=cycleEndOnOrAfter(billingDay, parseD(t.date));
+  return cycleKeyOf(end);
+}
+function cycleTxns(accountId, cyc){
+  const a=acc(accountId); if(!a) return [];
+  return S.transactions.filter(t=> t.accountId===accountId && (t.type==="expense"||t.type==="income") && transactionCycleKey(t,a)===cyc.key);
+}
+function cycleSpent(accountId, cyc){
+  let v=0;
+  cycleTxns(accountId,cyc).forEach(t=>{ v += t.type==="expense"? t.amount : -t.amount; });
   return Math.round(v*100)/100;
+}
+function nextCycleKey(a, cyc){
+  const billingDay=clampDay(a.billingDay);
+  const afterEnd=new Date(cyc.end.getFullYear(), cyc.end.getMonth(), cyc.end.getDate()+1);
+  return cycleKeyOf(cycleEndOnOrAfter(billingDay, afterEnd));
 }
 function cyclePaid(accountId, key){
   let v=0;
@@ -571,6 +614,20 @@ function toggleReconciled(accountId,key){
   if(S.cardRecon[rk]) delete S.cardRecon[rk]; else S.cardRecon[rk]=Date.now();
   save();
 }
+function isTxnReconciled(txnId){ return !!(S.txnRecon && S.txnRecon[txnId]); }
+function toggleTxnReconciled(txnId){
+  S.txnRecon = S.txnRecon||{};
+  if(S.txnRecon[txnId]) delete S.txnRecon[txnId]; else S.txnRecon[txnId]=Date.now();
+  save();
+}
+function syncCycleReconFlag(accountId, cyc){
+  const txns=cycleTxns(accountId,cyc);
+  S.cardRecon = S.cardRecon||{};
+  const rk=reconKey(accountId,cyc.key);
+  if(txns.length && txns.every(t=>isTxnReconciled(t.id))) S.cardRecon[rk]=Date.now();
+  else delete S.cardRecon[rk];
+  save();
+}
 function processCardAutoPay(){
   let changed=false; const today=todayStr();
   S.accounts.forEach(a=>{
@@ -580,7 +637,7 @@ function processCardAutoPay(){
     listRecentCycles(a,6).forEach(cyc=>{
       if(cyc.isOpen) return;
       if(dstr(cyc.due)>today) return;
-      const spent=cycleSpent(a.id,cyc.start,cyc.end);
+      const spent=cycleSpent(a.id,cyc);
       const paid=cyclePaid(a.id,cyc.key);
       const outstanding=Math.round((spent-paid)*100)/100;
       if(outstanding<=0.005) return;
@@ -924,9 +981,17 @@ function openAccountDetail(id){
   const cutoff=new Date(); cutoff.setHours(0,0,0,0); cutoff.setDate(cutoff.getDate()-29);
   const cutoffStr=dstr(cutoff);
   const list=S.transactions.filter(t=>(t.accountId===id||t.toAccountId===id)&&t.date>=cutoffStr).sort((x,y)=> y.date<x.date?-1:y.date>x.date?1:y.ts-x.ts);
+  const WD=["日","一","二","三","四","五","六"];
+  const groups=[];
+  list.forEach(t=>{ let g=groups[groups.length-1]; if(!g||g.date!==t.date){ g={date:t.date,items:[]}; groups.push(g); } g.items.push(t); });
+  const html=groups.map(g=>{
+    const d=parseD(g.date); const isToday=g.date===todayStr();
+    return `<div class="date-sep">${d.getMonth()+1}/${d.getDate()} 週${WD[d.getDay()]}${isToday?"（今天）":""}</div>`
+      + g.items.map(t=>txnRowHTML(t,true,false)).join("");
+  }).join("");
   openSheet(`${a.icon} ${escapeHtml(a.name)} · 近30天明細`,
     `<p class="muted" style="font-size:11.5px;margin:0 2px 10px">僅顯示近30天交易，唯讀僅供查閱，如需編輯請至月曆或報表點選該筆交易</p>`+
-    (list.length? list.map(t=>txnRowHTML(t,true)).join(""):`<div class="empty"><div class="ico">🗒️</div>近30天無交易紀錄</div>`));
+    (groups.length? html:`<div class="empty"><div class="ico">🗒️</div>近30天無交易紀錄</div>`));
 }
 const CYCLE_BADGE={
   open:"background:#EEF0F5;color:#4B5462",
@@ -934,40 +999,56 @@ const CYCLE_BADGE={
   overdue:"background:#FDE7EA;color:#D6314A",
   due:"background:#FFF4E0;color:#B9790A"
 };
+function cycleRowHTML(a,cyc){
+  const id=a.id;
+  const spent=cycleSpent(id,cyc);
+  const paid=cyclePaid(id,cyc.key);
+  const outstanding=Math.round((spent-paid)*100)/100;
+  const st=cycleStatus(cyc,outstanding);
+  const recon=isReconciled(id,cyc.key);
+  const txns=cycleTxns(id,cyc); const doneCount=txns.filter(t=>isTxnReconciled(t.id)).length;
+  const periodLabel=`${cyc.start.getMonth()+1}/${cyc.start.getDate()} – ${cyc.end.getMonth()+1}/${cyc.end.getDate()}`;
+  const dueLabel=`${cyc.due.getMonth()+1}/${cyc.due.getDate()}`;
+  return `<div class="card" style="margin:0 0 12px;padding:14px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+      <div><div style="font-weight:900;font-size:14px">${periodLabel}</div>
+        <div class="muted" style="font-size:11.5px;margin-top:2px">${cyc.isOpen?"帳單尚未出帳":`繳款期限 ${dueLabel}`}</div></div>
+      <span class="chip" style="${CYCLE_BADGE[st.cls]};flex:none">${st.label}</span></div>
+    <div style="display:flex;justify-content:space-between;margin-top:10px;font-size:13px;font-weight:800">
+      <span class="muted">${cyc.isOpen?"目前累積金額":"帳單金額"}</span><span class="num">${moneyAcc(spent,a)}</span></div>
+    ${paid>0?`<div style="display:flex;justify-content:space-between;margin-top:4px;font-size:13px;font-weight:800">
+      <span class="muted">已繳金額</span><span class="num" style="color:var(--income)">${moneyAcc(paid,a)}</span></div>`:""}
+    ${!cyc.isOpen?`<div style="display:flex;justify-content:space-between;margin-top:4px;font-size:13px;font-weight:900">
+      <span class="muted">尚需繳款</span><span class="num" style="color:${outstanding>0.005?'var(--expense)':'var(--income)'}">${moneyAcc(Math.max(0,outstanding),a)}</span></div>`:""}
+    <div class="btn-row" style="margin-top:12px">
+      <button class="btn ghost sm" data-detail="${cyc.key}">📋 帳單明細</button>
+      <button class="btn ghost sm" data-recon="${cyc.key}" style="${recon?'color:var(--income)':''}">${recon?'✓ ':'🔍 '}對帳（${doneCount}/${txns.length}）</button>
+    </div>
+    ${(!cyc.isOpen && outstanding>0.005)?`<button class="btn primary sm" data-pay="${cyc.key}" style="margin-top:8px;width:100%">💳 繳款 ${moneyAcc(outstanding,a)}</button>`:""}
+  </div>`;
+}
 function openCardStatements(id){
   const a=acc(id);
   const cycles=listRecentCycles(a,6);
-  const rows=cycles.map(cyc=>{
-    const spent=cycleSpent(id,cyc.start,cyc.end);
-    const paid=cyclePaid(id,cyc.key);
-    const outstanding=Math.round((spent-paid)*100)/100;
-    const st=cycleStatus(cyc,outstanding);
-    const recon=isReconciled(id,cyc.key);
-    const periodLabel=`${cyc.start.getMonth()+1}/${cyc.start.getDate()} – ${cyc.end.getMonth()+1}/${cyc.end.getDate()}`;
-    const dueLabel=`${cyc.due.getMonth()+1}/${cyc.due.getDate()}`;
-    return `<div class="card" style="margin:0 0 12px;padding:14px">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
-        <div><div style="font-weight:900;font-size:14px">${periodLabel}</div>
-          <div class="muted" style="font-size:11.5px;margin-top:2px">${cyc.isOpen?"帳單尚未出帳":`繳款期限 ${dueLabel}`}</div></div>
-        <span class="chip" style="${CYCLE_BADGE[st.cls]};flex:none">${st.label}</span></div>
-      <div style="display:flex;justify-content:space-between;margin-top:10px;font-size:13px;font-weight:800">
-        <span class="muted">${cyc.isOpen?"目前累積金額":"帳單金額"}</span><span class="num">${moneyAcc(spent,a)}</span></div>
-      ${paid>0?`<div style="display:flex;justify-content:space-between;margin-top:4px;font-size:13px;font-weight:800">
-        <span class="muted">已繳金額</span><span class="num" style="color:var(--income)">${moneyAcc(paid,a)}</span></div>`:""}
-      ${!cyc.isOpen?`<div style="display:flex;justify-content:space-between;margin-top:4px;font-size:13px;font-weight:900">
-        <span class="muted">尚需繳款</span><span class="num" style="color:${outstanding>0.005?'var(--expense)':'var(--income)'}">${moneyAcc(Math.max(0,outstanding),a)}</span></div>`:""}
-      <div class="btn-row" style="margin-top:12px">
-        <button class="btn ghost sm" data-detail="${cyc.key}">📋 帳單明細</button>
-        ${!cyc.isOpen?`<button class="btn ghost sm" data-recon="${cyc.key}" style="${recon?'color:var(--income)':''}">${recon?'✓ 已對帳':'☐ 標記對帳'}</button>`:""}
-      </div>
-      ${(!cyc.isOpen && outstanding>0.005)?`<button class="btn primary sm" data-pay="${cyc.key}" style="margin-top:8px;width:100%">💳 繳款 ${moneyAcc(outstanding,a)}</button>`:""}
-    </div>`;
-  }).join("");
+  const visible=cycles.slice(0,2), hidden=cycles.slice(2);
+  const visibleRows=visible.map(c=>cycleRowHTML(a,c)).join("");
+  const hiddenRows=hidden.map(c=>cycleRowHTML(a,c)).join("");
+  const moreSection = hidden.length? `
+    <button class="btn ghost sm" id="toggleMoreCycles" style="width:100%;margin-bottom:12px">顯示更早的帳單（${hidden.length} 期） ▾</button>
+    <div id="moreCyclesWrap" style="display:none">${hiddenRows}</div>` : "";
   openSheet(`${a.icon} ${escapeHtml(a.name)} · 帳單與繳費`,
-    `<p class="muted" style="font-size:11.5px;margin:0 0 12px">依結帳日 ${a.billingDay||1} 日／繳款日 ${a.dueDay||10} 日自動切分每期帳單${a.autoPay&&a.autoPayAccountId?`，已開啟自動扣繳（${escapeHtml((acc(a.autoPayAccountId)||{}).name||"")}）`:""}</p>`+rows);
+    `<p class="muted" style="font-size:11.5px;margin:0 0 12px">依結帳日 ${a.billingDay||1} 日／繳款日 ${a.dueDay||10} 日自動切分每期帳單${a.autoPay&&a.autoPayAccountId?`，已開啟自動扣繳（${escapeHtml((acc(a.autoPayAccountId)||{}).name||"")}）`:""}</p>`
+    +`<p class="muted" style="font-size:11px;margin:0 0 12px">預設顯示本期與上一期，其餘已收合</p>`
+    +visibleRows+moreSection);
+  const moreBtn=$("#toggleMoreCycles");
+  if(moreBtn) moreBtn.onclick=()=>{
+    const wrap=$("#moreCyclesWrap"); const showing=wrap.style.display!=="none";
+    wrap.style.display=showing?"none":"";
+    moreBtn.textContent=showing? `顯示更早的帳單（${hidden.length} 期） ▾` : `收合更早的帳單 ▴`;
+  };
   document.querySelectorAll("#sheetBody [data-detail]").forEach(b=>b.onclick=()=>{
     const cyc=cycles.find(c=>c.key===b.dataset.detail);
-    const list=S.transactions.filter(t=>t.accountId===id && (t.type==="expense"||t.type==="income") && t.date>=dstr(cyc.start) && t.date<=dstr(cyc.end)).sort((x,y)=> y.date<x.date?-1:y.date>x.date?1:y.ts-x.ts);
+    const list=cycleTxns(id,cyc).sort((x,y)=> y.date<x.date?-1:y.date>x.date?1:y.ts-x.ts);
     const periodLabel=`${cyc.start.getMonth()+1}/${cyc.start.getDate()}–${cyc.end.getMonth()+1}/${cyc.end.getDate()}`;
     openSheet(`帳單明細 · ${periodLabel}`,
       `<button class="btn ghost sm" id="backToStmt" style="margin-bottom:12px">‹ 返回帳單列表</button>`+
@@ -976,14 +1057,61 @@ function openCardStatements(id){
     bindTxnRows();
   });
   document.querySelectorAll("#sheetBody [data-recon]").forEach(b=>b.onclick=()=>{
-    toggleReconciled(id,b.dataset.recon); const nowRecon=isReconciled(id,b.dataset.recon);
-    toast(nowRecon?"已標記對帳":"已取消對帳標記"); openCardStatements(id);
+    const cyc=cycles.find(c=>c.key===b.dataset.recon);
+    openCycleRecon(id, cyc, ()=>openCardStatements(id));
   });
   document.querySelectorAll("#sheetBody [data-pay]").forEach(b=>b.onclick=()=>{
     const cyc=cycles.find(c=>c.key===b.dataset.pay);
-    const spent=cycleSpent(id,cyc.start,cyc.end), paid=cyclePaid(id,cyc.key);
+    const spent=cycleSpent(id,cyc), paid=cyclePaid(id,cyc.key);
     const periodLabel=`${cyc.start.getMonth()+1}/${cyc.start.getDate()}–${cyc.end.getMonth()+1}/${cyc.end.getDate()}`;
     openCardPaySheet(id, cyc.key, Math.round((spent-paid)*100)/100, periodLabel, ()=>openCardStatements(id));
+  });
+}
+function openCycleRecon(accountId, cyc, back){
+  const a=acc(accountId);
+  const txns=cycleTxns(accountId,cyc).sort((x,y)=> y.date<x.date?-1:y.date>x.date?1:y.ts-x.ts);
+  const doneCount=txns.filter(t=>isTxnReconciled(t.id)).length;
+  const periodLabel=`${cyc.start.getMonth()+1}/${cyc.start.getDate()} – ${cyc.end.getMonth()+1}/${cyc.end.getDate()}`;
+  const rows=txns.length? txns.map(t=>{
+    const checked=isTxnReconciled(t.id);
+    const deferred=!!t.statementOverride;
+    const c=cat(t.categoryId);
+    const sign=t.type==="income"?"+":"-";
+    return `<div class="row" style="align-items:flex-start;gap:10px">
+      <button class="icon-btn" data-rtoggle="${t.id}" style="background:${checked?'var(--income)':'var(--surface-2)'};color:${checked?'#fff':'var(--ink-3)'};flex:none;font-size:16px;font-weight:900">${checked?"✓":""}</button>
+      <div style="flex:1;min-width:0">
+        <div class="nm">${escapeHtml(c?c.name:(t.type==="income"?"收入":"支出"))} <span class="muted" style="font-size:11px;font-weight:700">${t.date}</span></div>
+        <div class="sub" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(t.note||"")}${deferred?` <span class="tag-mini" style="color:var(--adjust)">⏩已延後至下期</span>`:""}</div>
+      </div>
+      <div style="text-align:right;flex:none">
+        <div class="amt num" style="font-size:14px">${sign}${moneyAcc(t.amount,a)}</div>
+        ${deferred?`<button class="btn ghost sm" data-undefer="${t.id}" style="margin-top:4px;padding:4px 8px;font-size:11px">復原</button>`
+                  :`<button class="btn ghost sm" data-defer="${t.id}" style="margin-top:4px;padding:4px 8px;font-size:11px">延後至下期</button>`}
+      </div>
+    </div>`;
+  }).join("") : `<div class="empty"><div class="ico">🗒️</div>此期間無交易</div>`;
+  openSheet(`逐筆對帳 · ${periodLabel}`,`
+    <button class="btn ghost sm" id="reconBack" style="margin-bottom:10px">‹ 返回帳單列表</button>
+    <p class="muted" style="font-size:12px;margin:0 0 12px">已核對 ${doneCount} / ${txns.length} 筆。逐筆勾選代表已對過實際信用卡帳單；如果某筆其實該算在下一期帳單，可點「延後至下期」。</p>
+    <div class="card tight">${rows}</div>`);
+  $("#reconBack").onclick=()=>{ if(back) back(); else closeSheet(); };
+  document.querySelectorAll("#sheetBody [data-rtoggle]").forEach(b=>b.onclick=()=>{
+    toggleTxnReconciled(b.dataset.rtoggle);
+    syncCycleReconFlag(accountId, cyc);
+    openCycleRecon(accountId, cyc, back);
+  });
+  document.querySelectorAll("#sheetBody [data-defer]").forEach(b=>b.onclick=()=>{
+    const t=S.transactions.find(x=>x.id===b.dataset.defer); if(!t) return;
+    t.statementOverride=nextCycleKey(a,cyc);
+    if(S.txnRecon) delete S.txnRecon[t.id];
+    save(); syncCycleReconFlag(accountId, cyc);
+    toast("已延後至下期帳單"); openCycleRecon(accountId, cyc, back);
+  });
+  document.querySelectorAll("#sheetBody [data-undefer]").forEach(b=>b.onclick=()=>{
+    const t=S.transactions.find(x=>x.id===b.dataset.undefer); if(!t) return;
+    t.statementOverride=null;
+    save(); syncCycleReconFlag(accountId, cyc);
+    toast("已復原至原帳單期"); openCycleRecon(accountId, cyc, back);
   });
 }
 function openCardPaySheet(cardId, cycleKey, outstanding, periodLabel, back){
@@ -1343,8 +1471,22 @@ function openCatDrill(cid,s,e){
   let list=S.transactions.filter(t=>t.date>=s&&t.date<=e&&t.type===reportType&&(t.categoryId||"_none")===cid);
   if(reportTagIds.length) list=list.filter(tagFilterPass);
   list.sort((a,b)=> a.date<b.date?1:a.date>b.date?-1:b.ts-a.ts);
-  openSheet(`${c?c.icon:"❓"} ${c?escapeHtml(c.name):"未分類"}`, list.map(t=>txnRowHTML(t)).join("")||`<div class="empty">無紀錄</div>`);
-  bindTxnRows();
+  const WD=["日","一","二","三","四","五","六"];
+  const groups=[];
+  list.forEach(t=>{
+    let g=groups[groups.length-1];
+    if(!g||g.date!==t.date){ g={date:t.date,items:[]}; groups.push(g); }
+    g.items.push(t);
+  });
+  const html=groups.map(g=>{
+    const d=parseD(g.date);
+    const isToday=g.date===todayStr();
+    return `<div class="date-sep">${d.getMonth()+1}/${d.getDate()} 週${WD[d.getDay()]}${isToday?"（今天）":""}</div>`
+      + g.items.map(t=>txnRowHTML(t,true,false)).join("");
+  }).join("");
+  openSheet(`${c?c.icon:"❓"} ${c?escapeHtml(c.name):"未分類"}`,
+    `<p class="muted" style="font-size:11.5px;margin:0 2px 10px">唯讀僅供查閱，如需編輯請至月曆點選該筆交易</p>`+
+    (groups.length? html:`<div class="empty">無紀錄</div>`));
 }
 
 /* ============================================================ TAB 5 設定 */
@@ -1649,7 +1791,7 @@ function googleRestore(){
 }
 
 /* ============================================================ 交易列 / 記帳 */
-function txnRowHTML(t, readOnly){
+function txnRowHTML(t, readOnly, showDate){
   let icon,color,title,sub,amtClass,sign,amtVal,curCode="TWD";
   const tagStr=txnTags(t).map(x=>"#"+x.name).join(" ");
   if(t.type==="transfer"){
@@ -1668,10 +1810,11 @@ function txnRowHTML(t, readOnly){
   }
   const curPrefix=curCode!=="TWD"? currencySymbol(curCode):"";
   const tag=readOnly?"div":"button";
+  const dateLabel=showDate? `${parseD(t.date).getMonth()+1}/${parseD(t.date).getDate()} · `:"";
   return `<${tag} class="row${readOnly?"":" txn-row"}" style="width:100%;text-align:left"${readOnly?"":` data-txn="${t.id}"`}>
     <div class="av" style="width:38px;height:38px;font-size:18px;border-radius:11px;background:${color}">${icon}</div>
     <div style="min-width:0"><div class="nm">${escapeHtml(title)}</div>
-      <div class="sub" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px">${escapeHtml(sub)}${tagStr?` <span class="tag-mini">${escapeHtml(tagStr)}</span>`:""}${t.recurringId?` <span class="tag-mini">🔁週期</span>`:""}</div></div>
+      <div class="sub" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px">${dateLabel}${escapeHtml(sub)}${tagStr?` <span class="tag-mini">${escapeHtml(tagStr)}</span>`:""}${t.recurringId?` <span class="tag-mini">🔁週期</span>`:""}</div></div>
     <div class="amt num ${amtClass}">${sign}${curPrefix}${fmt(amtVal)}</div></${tag}>`;
 }
 function bindTxnRows(){ document.querySelectorAll(".txn-row").forEach(b=>b.onclick=()=>{ const t=S.transactions.find(x=>x.id===b.dataset.txn); if(t) openTxnSheet(t); }); }
@@ -1696,6 +1839,13 @@ function openTxnSheet(opts){
   const catsFor=type=>S.categories.filter(c=>c.type===type);
   if(!editing && model.type!=="transfer" && !model.categoryId){ const l=catsFor(model.type); model.categoryId=l[0]?l[0].id:null; }
   if(!editing && !opts.accountId){ model.accountId = recommendAccount(model.type!=="transfer"? model.categoryId:null); }
+  function ensureCardDefault(){
+    if(model.type==="transfer") return;
+    const a=acc(model.accountId); const cds=(a&&a.cards)||[];
+    if(cds.length){ if(!model.cardId || !cds.some(c=>c.id===model.cardId)) model.cardId=cds[0].id; }
+    else model.cardId=null;
+  }
+  ensureCardDefault();
 
   function bodyHTML(){
     const isTr=model.type==="transfer";
@@ -1718,8 +1868,8 @@ function openTxnSheet(opts){
         <div class="pick-grid" id="tagPick">${S.tags.map(t=>`<button class="pick ${model.tagIds.includes(t.id)?'on':''}" data-tg="${t.id}"><span class="dot" style="background:${t.color}"></span>${escapeHtml(t.name)}</button>`).join("")}<button class="pick" id="addTagInline" style="border:2px dashed var(--line)">＋ 新增</button></div></div>
       <label class="fld"><span class="lb">帳戶${(!editing&&!userPickedAccount)?' <span class="muted" style="font-weight:700;font-size:11px">· 依類別自動推薦</span>':''}</span><select class="input" id="acc">${accountOptionsHTML(model.accountId)}</select></label>
       <div class="fld" id="cardPickWrap" style="${curCards.length?"":"display:none"}">
-        <span class="lb">卡別（選填）</span>
-        <select class="input" id="cardSel"><option value="">— 未指定 —</option>${curCards.map(c=>`<option value="${c.id}" ${model.cardId===c.id?"selected":""}>${escapeHtml(c.name)}</option>`).join("")}</select>
+        <span class="lb">卡別</span>
+        <select class="input" id="cardSel">${curCards.map(c=>`<option value="${c.id}" ${model.cardId===c.id?"selected":""}>${escapeHtml(c.name)}</option>`).join("")}</select>
       </div>
       <label class="fld"><span class="lb">專案（選填）</span><select class="input" id="prj"><option value="">— 無 —</option>${S.projects.map(p=>`<option value="${p.id}" ${p.id===model.projectId?"selected":""}>${p.icon} ${escapeHtml(p.name)}</option>`).join("")}</select></label>
     `}
@@ -1751,9 +1901,15 @@ function openTxnSheet(opts){
       <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button><button class="op" data-k="*">×</button>
       <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button><button class="op" data-k="-">−</button>
       <button data-k=".">.</button><button data-k="0">0</button><button data-k="back">⌫</button><button class="op" data-k="+">＋</button></div></details>
-    ${editing?`<button class="btn ghost" id="txCopy" style="margin-top:16px">📑 複製這筆</button><button class="btn danger" id="txDel" style="margin-top:10px">🗑️ 刪除這筆</button>`:""}`;
+    `;
   }
-  openSheet(editing?"編輯交易":(model.type==="transfer"?"轉帳":"記一筆"), bodyHTML(), {actionLabel:editing?"儲存":"完成", onAction:()=>commit()});
+  openSheet(editing?"編輯交易":(model.type==="transfer"?"轉帳":"記一筆"), bodyHTML(), {
+    actionLabel:editing?"儲存":"完成", onAction:()=>commit(),
+    extraActions: editing? [
+      {icon:"📑", label:"複製這筆", onClick:()=>{ readInputs(); const copy={...model}; delete copy.id; closeSheet(); setTimeout(()=>openTxnSheet({...copy}),120); }},
+      {icon:"🗑️", label:"刪除這筆", danger:true, onClick:()=>{ if(confirm("刪除這筆交易？")){ S.transactions=S.transactions.filter(t=>t.id!==editing.id); save(); closeSheet(); render(); toast("已刪除"); } }}
+    ] : []
+  });
   bindBody();
   updateCurDisplay();
   setTimeout(()=>{ const el=$("#amtInput"); if(el){ el.focus(); const L=el.value.length; el.setSelectionRange&&el.setSelectionRange(L,L); } },320);
@@ -1764,6 +1920,7 @@ function openTxnSheet(opts){
       model.type=b.dataset.ty;
       if(model.type!=="transfer"){ model.categoryId=mostUsedCategory(model.type); }
       if(!editing && !userPickedAccount){ model.accountId=recommendAccount(model.type!=="transfer"? model.categoryId:null); }
+      ensureCardDefault();
       const keep=$("#amtInput")?$("#amtInput").value:""; $("#sheetBody").innerHTML=bodyHTML(); bindBody();
       const el=$("#amtInput"); if(el) el.value=keep; updateCurDisplay();
     });
@@ -1773,7 +1930,7 @@ function openTxnSheet(opts){
       if(!editing && !userPickedAccount){
         const rec=recommendAccount(model.categoryId);
         if(rec && rec!==model.accountId){
-          model.accountId=rec; model.cardId=null;
+          model.accountId=rec; ensureCardDefault();
           const sel=$("#acc"); if(sel) sel.value=rec;
           updateCurDisplay(); refreshCardPicker();
           const a=acc(rec); if(a) toast("已推薦帳戶："+a.name);
@@ -1797,17 +1954,13 @@ function openTxnSheet(opts){
     const amtEl=$("#amtInput");
     if(amtEl) amtEl.addEventListener("input",()=>{ amtEl.value=amtEl.value.replace(/[^0-9+\-*/.]/g,""); updateAmt(); });
     const cardSel=$("#cardSel");
-    if(cardSel) cardSel.addEventListener("change",()=>{ model.cardId=cardSel.value||null; });
+    if(cardSel) cardSel.addEventListener("change",()=>{ model.cardId=cardSel.value; });
     const accSel=$("#acc")||$("#fAcc");
-    if(accSel) accSel.addEventListener("change",()=>{ model.accountId=accSel.value; userPickedAccount=true; if($("#acc")){ model.cardId=null; } updateCurDisplay(); refreshCardPicker(); });
+    if(accSel) accSel.addEventListener("change",()=>{ model.accountId=accSel.value; userPickedAccount=true; if($("#acc")){ ensureCardDefault(); } updateCurDisplay(); refreshCardPicker(); });
     const toSel=$("#tAcc");
     if(toSel) toSel.addEventListener("change",()=>{ model.toAccountId=toSel.value; });
     const noteEl=$("#txNote");
     if(noteEl && !editing) noteEl.addEventListener("blur", applyNoteSuggestion);
-    if(editing){
-      $("#txCopy").onclick=()=>{ readInputs(); const copy={...model}; delete copy.id; closeSheet(); setTimeout(()=>openTxnSheet({...copy}),120); };
-      $("#txDel").onclick=()=>{ if(confirm("刪除這筆交易？")){ S.transactions=S.transactions.filter(t=>t.id!==editing.id); save(); closeSheet(); render(); toast("已刪除"); } };
-    }
   }
   function readInputs(){ const g=id=>document.getElementById(id);
     if(g("acc")) model.accountId=g("acc").value; if(g("fAcc")) model.accountId=g("fAcc").value; if(g("tAcc")) model.toAccountId=g("tAcc").value;
@@ -1827,6 +1980,7 @@ function openTxnSheet(opts){
     if(match.accountId && match.accountId!==model.accountId){
       model.accountId=match.accountId; userPickedAccount=true;
       const sel=document.getElementById("acc"); if(sel) sel.value=match.accountId;
+      ensureCardDefault(); refreshCardPicker();
       updateCurDisplay();
       changed=true;
     }
@@ -1856,8 +2010,8 @@ function openTxnSheet(opts){
     const a=acc(model.accountId); const cds=(a&&a.cards)||[];
     if(!cds.length){ wrap.style.display="none"; wrap.innerHTML=""; return; }
     wrap.style.display="";
-    wrap.innerHTML=`<span class="lb">卡別（選填）</span><select class="input" id="cardSel"><option value="">— 未指定 —</option>${cds.map(c=>`<option value="${c.id}" ${model.cardId===c.id?"selected":""}>${escapeHtml(c.name)}</option>`).join("")}</select>`;
-    const sel=$("#cardSel"); if(sel) sel.addEventListener("change",()=>{ model.cardId=sel.value||null; });
+    wrap.innerHTML=`<span class="lb">卡別</span><select class="input" id="cardSel">${cds.map(c=>`<option value="${c.id}" ${model.cardId===c.id?"selected":""}>${escapeHtml(c.name)}</option>`).join("")}</select>`;
+    const sel=$("#cardSel"); if(sel) sel.addEventListener("change",()=>{ model.cardId=sel.value; });
   }
   function updateCurDisplay(){
     const cs=$("#curSym"); if(cs) cs.textContent=currencySymbol(currentCurCode());
@@ -1871,6 +2025,10 @@ function openTxnSheet(opts){
   function commit(){
     readInputs(); const raw=$("#amtInput")?$("#amtInput").value:"0"; const amt=parseFloat(safeCalc(raw));
     if(!amt||amt<=0){ toast("請輸入金額"); return; }
+    if(model.type!=="transfer"){
+      const curAcc=acc(model.accountId); const curCards=(curAcc&&curAcc.cards)||[];
+      if(curCards.length && !curCards.some(c=>c.id===model.cardId)){ toast("這個帳戶有多個卡別，請選擇是哪一張"); return; }
+    }
     if(model.accountId){ S.settings=S.settings||{}; S.settings.lastAccountId=model.accountId; }
     if(model.type==="transfer"){
       if(model.accountId===model.toAccountId){ toast("轉出與轉入帳戶不能相同"); return; }
@@ -1913,11 +2071,23 @@ function openSheet(title,html,opts){
   opts=opts||{};
   $("#sheetTitle").textContent=title; $("#sheetBody").innerHTML=html;
   const old=document.getElementById("sheetAction"); if(old) old.remove();
+  document.querySelectorAll(".sheet-extra-action").forEach(el=>el.remove());
+  const headRight=document.getElementById("sheetHeadRight");
+  if(Array.isArray(opts.extraActions)){
+    opts.extraActions.forEach(ea=>{
+      const btn=document.createElement("button");
+      btn.className="icon-btn sheet-extra-action"; btn.textContent=ea.icon;
+      btn.title=ea.label||"";
+      if(ea.danger) btn.style.color="var(--expense)";
+      btn.onclick=()=>ea.onClick&&ea.onClick();
+      headRight.insertBefore(btn, $("#sheetClose"));
+    });
+  }
   if(opts.actionLabel){
     const btn=document.createElement("button");
     btn.id="sheetAction"; btn.className="sheet-action"; btn.textContent=opts.actionLabel;
     btn.onclick=()=>opts.onAction&&opts.onAction();
-    document.getElementById("sheetHeadRight").insertBefore(btn, $("#sheetClose"));
+    headRight.insertBefore(btn, $("#sheetClose"));
   }
   $("#sheet").classList.add("show"); $("#scrim").classList.add("show"); $("#sheetBody").scrollTop=0;
 }

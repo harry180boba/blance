@@ -211,9 +211,21 @@ details summary{font-weight:800;font-size:13px;color:var(--brand-ink);cursor:poi
 /* ============================================================
    記帳 MoneyBook
    ============================================================ */
-const VERSION = "1.14.6";
-const SCHEMA = 10;
+const VERSION = "1.15.1";
+const SCHEMA = 12;
 const CHANGELOG = [
+  {v:"1.15.1", d:"2026-06-19", items:[
+    "信用卡回饋改版：回饋方案不綁標籤，改為自訂名稱與回饋率（如「一般消費 0.5%」「指定通路 5%」），選卡別後才顯示該卡方案讓你點選",
+    "國外交易手續費與服務費並排成兩個並排切換按鈕，版面更簡潔",
+    "更新日誌獨立成彈出頁面，設定頁不再堆滿日誌文字"
+  ]},
+  {v:"1.15.0", d:"2026-06-19", items:[
+    "信用卡卡別新增🎁紅利回饋規則：可設定「選到某個標籤時的回饋百分比」，記帳時選到對應標籤會即時顯示預估回饋金額，並在交易列表標示",
+    "帳戶新增「國外交易手續費%」欄位（不限信用卡），記帳時可勾選「🌍國外交易」自動加上手續費並帶入「國外交易手續費」標籤",
+    "記帳新增「+10%服務費」一鍵加成，四捨五入後加到總金額，並自動帶入「服務費」標籤，兩個加成可同時勾選",
+    "金額加成後會即時顯示算式試算（原始金額 + 各項加成 = 最終金額），並以最終金額計算紅利回饋",
+    "帳單頁新增「🎁預估紅利回饋」小計，顯示該期帳單的累積預估回饋總額"
+  ]},
   {v:"1.14.6", d:"2026-06-18", items:[
     "Google OAuth Client ID 內建為預設值，設定頁會自動帶入，不用每次手動輸入（仍可自行修改）"
   ]},
@@ -432,6 +444,27 @@ function migrate(d){
     d.schema = 10;
   }
   d.txnRecon = d.txnRecon || {};
+  if(d.schema<11){
+    d.accounts.forEach(a=>{
+      if(typeof a.foreignFeeRate!=="number") a.foreignFeeRate=0;
+      if(Array.isArray(a.cards)) a.cards.forEach(c=>{ if(!Array.isArray(c.rewards)) c.rewards=[]; });
+    });
+    d.schema = 11;
+  }
+  if(d.schema<12){
+    // rewards 格式從 {id,tagId,rate} 改成 {id,name,rate}
+    d.accounts.forEach(a=>{ if(!Array.isArray(a.cards)) return; a.cards.forEach(c=>{ if(!Array.isArray(c.rewards)) return;
+      c.rewards=c.rewards.map(r=>({ id:r.id||uid(), name:r.name||(r.tagId?(d.tags||[]).find(t=>t.id===r.tagId)?.name:"回饋")||"回饋", rate:parseFloat(r.rate)||0 })).filter(r=>r.rate>0); });
+    });
+    // transactions: selectedRewardId 欄位補空
+    d.transactions.forEach(t=>{ if(t.selectedRewardId===undefined) t.selectedRewardId=null; });
+    d.schema=12;
+  }
+  d.transactions.forEach(t=>{ if(t.selectedRewardId===undefined) t.selectedRewardId=null; });
+  d.accounts.forEach(a=>{
+    if(typeof a.foreignFeeRate!=="number") a.foreignFeeRate=0;
+    if(Array.isArray(a.cards)) a.cards.forEach(c=>{ if(!Array.isArray(c.rewards)) c.rewards=[]; }); else a.cards=[];
+  });
   d.transactions.forEach(t=>{ if(!Array.isArray(t.tagIds)) t.tagIds=[]; });
   d.version=VERSION;
   return d;
@@ -441,9 +474,9 @@ function seed(){
   return {
     version:VERSION, schema:SCHEMA,
     accounts:[
-      {id:uid(),name:"現金",icon:"💵",color:"#13B47A",initial:0,order:0,group:"cash",currency:"TWD",creditLimit:0,cards:[],limitMode:"shared"},
-      {id:uid(),name:"銀行",icon:"🏦",color:"#2E8FF0",initial:0,order:1,group:"bank",currency:"TWD",creditLimit:0,cards:[],limitMode:"shared"},
-      {id:uid(),name:"信用卡",icon:"💳",color:"#6C4FE0",initial:0,order:2,group:"credit",currency:"TWD",creditLimit:0,cards:[],limitMode:"shared",billingDay:1,dueDay:10,autoPay:false,autoPayAccountId:null},
+      {id:uid(),name:"現金",icon:"💵",color:"#13B47A",initial:0,order:0,group:"cash",currency:"TWD",creditLimit:0,cards:[],limitMode:"shared",foreignFeeRate:0},
+      {id:uid(),name:"銀行",icon:"🏦",color:"#2E8FF0",initial:0,order:1,group:"bank",currency:"TWD",creditLimit:0,cards:[],limitMode:"shared",foreignFeeRate:0},
+      {id:uid(),name:"信用卡",icon:"💳",color:"#6C4FE0",initial:0,order:2,group:"credit",currency:"TWD",creditLimit:0,cards:[],limitMode:"shared",billingDay:1,dueDay:10,autoPay:false,autoPayAccountId:null,foreignFeeRate:1.5},
     ],
     categories:[
       {id:uid(),name:"餐飲",icon:"🍜",color:"#F0445B",type:"expense"},
@@ -547,6 +580,36 @@ function accountBalance(id){
 function totalAssets(){ return S.accounts.reduce((s,a)=>s+accountBalance(a.id)*fxRate(accCurrency(a)),0); }
 function creditUsed(id){ const bal=accountBalance(id); return bal<0? -bal:0; }
 function cardOf(a,cardId){ return a&&Array.isArray(a.cards)? a.cards.find(c=>c.id===cardId):null; }
+function ensureSystemTag(name,color){
+  let t=S.tags.find(x=>x.name===name);
+  if(!t){ t={id:uid(),name,color:color||COLORS[S.tags.length%COLORS.length]}; S.tags.push(t); }
+  return t;
+}
+function rewardRulesForCard(card){ return (card&&Array.isArray(card.rewards))? card.rewards:[]; }
+function computeRewardEstimate(card, selectedRewardId, finalAmount){
+  if(!card||!selectedRewardId) return {rule:null,rate:0,amount:0};
+  const rule=rewardRulesForCard(card).find(r=>r.id===selectedRewardId);
+  if(!rule) return {rule:null,rate:0,amount:0};
+  const rate=parseFloat(rule.rate)||0;
+  const amount=Math.round(finalAmount*rate)/100;
+  return {rule, rate, amount};
+}
+const SURCHARGE_SERVICE_RATE=10;
+function computeSurcharges(base, opts){
+  opts=opts||{};
+  const parts=[];
+  if(opts.service){
+    const amt=Math.round(base*SURCHARGE_SERVICE_RATE/100);
+    parts.push({type:"service", label:`服務費${SURCHARGE_SERVICE_RATE}%`, rate:SURCHARGE_SERVICE_RATE, amount:amt});
+  }
+  if(opts.foreign && opts.foreignRate>0){
+    const amt=Math.round(base*opts.foreignRate/100);
+    parts.push({type:"foreign", label:`國外交易手續費${opts.foreignRate}%`, rate:opts.foreignRate, amount:amt});
+  }
+  const surchargeTotal=parts.reduce((s,p)=>s+p.amount,0);
+  const final=Math.round((base+surchargeTotal)*100)/100;
+  return {parts, surchargeTotal, final};
+}
 function cardUsage(accountId,cardId){
   let exp=0,inc=0;
   S.transactions.forEach(t=>{ if(t.accountId===accountId && t.cardId===cardId){ if(t.type==="expense") exp+=t.amount; else if(t.type==="income") inc+=t.amount; } });
@@ -1011,6 +1074,7 @@ function cycleRowHTML(a,cyc){
   const st=cycleStatus(cyc,outstanding);
   const recon=isReconciled(id,cyc.key);
   const txns=cycleTxns(id,cyc); const doneCount=txns.filter(t=>isTxnReconciled(t.id)).length;
+  const rewardTotal=Math.round(txns.reduce((s,t)=>s+(t.rewardAmount||0),0)*100)/100;
   const periodLabel=`${cyc.start.getMonth()+1}/${cyc.start.getDate()} – ${cyc.end.getMonth()+1}/${cyc.end.getDate()}`;
   const dueLabel=`${cyc.due.getMonth()+1}/${cyc.due.getDate()}`;
   return `<div class="card" style="margin:0 0 12px;padding:14px">
@@ -1024,6 +1088,8 @@ function cycleRowHTML(a,cyc){
       <span class="muted">已繳金額</span><span class="num" style="color:var(--income)">${moneyAcc(paid,a)}</span></div>`:""}
     ${!cyc.isOpen?`<div style="display:flex;justify-content:space-between;margin-top:4px;font-size:13px;font-weight:900">
       <span class="muted">尚需繳款</span><span class="num" style="color:${outstanding>0.005?'var(--expense)':'var(--income)'}">${moneyAcc(Math.max(0,outstanding),a)}</span></div>`:""}
+    ${rewardTotal>0?`<div style="display:flex;justify-content:space-between;margin-top:4px;font-size:13px;font-weight:800">
+      <span class="muted">🎁 預估紅利回饋</span><span class="num" style="color:var(--income)">${moneyAcc(rewardTotal,a)}</span></div>`:""}
     <div class="btn-row" style="margin-top:12px">
       <button class="btn ghost sm" data-detail="${cyc.key}">📋 帳單明細</button>
       <button class="btn ghost sm" data-recon="${cyc.key}" style="${recon?'color:var(--income)':''}">${recon?'✓ ':'🔍 '}對帳（${doneCount}/${txns.length}）</button>
@@ -1142,19 +1208,27 @@ function openCardPaySheet(cardId, cycleKey, outstanding, periodLabel, back){
   };
 }
 function openAccountSheet(a, back){
-  const ed=!!a; a=a||{name:"",icon:"💳",color:"#6C4FE0",initial:0,group:"cash",currency:"TWD",creditLimit:0,cards:[],limitMode:"shared"};
-  const isCredit=(a.group||"cash")==="credit";
-  openSheet(ed?"編輯帳戶":"新增帳戶",`
-    <label class="fld"><span class="lb">名稱</span><input class="input" id="acName" value="${escapeHtml(a.name)}" placeholder="例如：薪轉戶"></label>
-    <div class="fld"><span class="lb">分類</span><div class="pick-grid" id="acGrp">${ACC_GROUPS.map(g=>`<button class="pick ${(a.group||"cash")===g.id?'on':''}" data-g="${g.id}">${g.icon} ${g.name}</button>`).join("")}</div></div>
-    <label class="fld"><span class="lb">幣別</span><select class="input" id="acCur">${CURRENCIES.map(c=>`<option value="${c.code}" ${(a.currency||"TWD")===c.code?"selected":""}>${c.symbol} ${c.name}（${c.code}）</option>`).join("")}</select></label>
-    <label class="fld"><span class="lb">${ed?"初始金額":"目前金額"}（依上方所選幣別）</span><input class="input num" id="acInit" type="text" inputmode="decimal" value="${a.initial||0}"></label>
+  const ed=!!a; a=a||{name:"",icon:"💳",color:"#6C4FE0",initial:0,group:"cash",currency:"TWD",creditLimit:0,cards:[],limitMode:"shared",foreignFeeRate:0};
+  let icon=a.icon,color=a.color,group=a.group||"cash",limitMode=a.limitMode||"shared";
+  let autoPay=!!a.autoPay, autoPayAccountId=a.autoPayAccountId||null;
+  let cards=(a.cards||[]).map(c=>({...c, rewards:(c.rewards||[]).map(r=>({...r}))}));
+  let keepInputs={ name:a.name, init:a.initial||0, foreignFee:a.foreignFeeRate||0, billDay:a.billingDay||1, dueDay:a.dueDay||10, cur:a.currency||"TWD" };
+
+  function bodyHTML(){
+    const isCredit=group==="credit";
+    return `
+    <label class="fld"><span class="lb">名稱</span><input class="input" id="acName" value="${escapeHtml(keepInputs.name)}" placeholder="例如：薪轉戶"></label>
+    <div class="fld"><span class="lb">分類</span><div class="pick-grid" id="acGrp">${ACC_GROUPS.map(g=>`<button class="pick ${group===g.id?'on':''}" data-g="${g.id}">${g.icon} ${g.name}</button>`).join("")}</div></div>
+    <label class="fld"><span class="lb">幣別</span><select class="input" id="acCur">${CURRENCIES.map(c=>`<option value="${c.code}" ${keepInputs.cur===c.code?"selected":""}>${c.symbol} ${c.name}（${c.code}）</option>`).join("")}</select></label>
+    <label class="fld"><span class="lb">${ed?"初始金額":"目前金額"}（依上方所選幣別）</span><input class="input num" id="acInit" type="text" inputmode="decimal" value="${keepInputs.init}"></label>
+    <label class="fld"><span class="lb">國外交易手續費%（選填，0 = 不設定）</span><input class="input num" id="acForeignFee" type="text" inputmode="decimal" value="${keepInputs.foreignFee}"></label>
+    <p class="muted" style="font-size:11px;margin:4px 2px 0">設定後，記帳時可一鍵套用此手續費並自動加上「國外交易手續費」標籤</p>
     <div id="creditFields" style="${isCredit?"":"display:none"}">
       <label class="fld"><span class="lb">信用額度（選填，0 = 不設定）</span><input class="input num" id="acLimit" type="text" inputmode="decimal" value="${a.creditLimit||0}"></label>
       <div class="fld"><span class="lb">額度設定</span>
         <div class="seg" id="limitModeSeg">
-          <button data-lm="shared" class="${(a.limitMode||"shared")==="shared"?"on":""}">共用額度</button>
-          <button data-lm="perCard" class="${a.limitMode==="perCard"?"on":""}">各卡別獨立額度</button></div>
+          <button data-lm="shared" class="${limitMode==="shared"?"on":""}">共用額度</button>
+          <button data-lm="perCard" class="${limitMode==="perCard"?"on":""}">各卡別獨立額度</button></div>
         <p class="muted" style="font-size:11px;margin:6px 2px 0" id="limitModeHint"></p>
       </div>
       <div class="fld"><span class="lb">卡別管理 <span class="muted" style="font-weight:700;font-size:11px">· 同一帳戶下有多個卡別時填寫，選填</span></span>
@@ -1163,28 +1237,44 @@ function openAccountSheet(a, back){
       </div>
       <div class="fld"><span class="lb">帳單週期</span>
         <div style="display:flex;gap:10px">
-          <div style="flex:1"><span class="muted" style="font-size:11px;font-weight:800">結帳日（每月）</span><input class="input num" id="acBillDay" type="text" inputmode="numeric" value="${a.billingDay||1}" placeholder="1-28"></div>
-          <div style="flex:1"><span class="muted" style="font-size:11px;font-weight:800">繳款日（每月）</span><input class="input num" id="acDueDay" type="text" inputmode="numeric" value="${a.dueDay||10}" placeholder="1-28"></div>
+          <div style="flex:1"><span class="muted" style="font-size:11px;font-weight:800">結帳日（每月）</span><input class="input num" id="acBillDay" type="text" inputmode="numeric" value="${keepInputs.billDay}" placeholder="1-28"></div>
+          <div style="flex:1"><span class="muted" style="font-size:11px;font-weight:800">繳款日（每月）</span><input class="input num" id="acDueDay" type="text" inputmode="numeric" value="${keepInputs.dueDay}" placeholder="1-28"></div>
         </div>
         <p class="muted" style="font-size:11px;margin:6px 2px 0">用來自動切出每期帳單範圍，方便對帳與繳費；僅支援每月固定日（1–28日）</p>
       </div>
       <div class="fld"><span class="lb">自動扣繳</span>
         <div class="seg" id="autoPaySeg">
-          <button data-ap="off" class="${!a.autoPay?'on':''}">關閉</button>
-          <button data-ap="on" class="${a.autoPay?'on':''}">開啟</button></div>
-        <div id="autoPayAccWrap" style="margin-top:10px;${a.autoPay?'':'display:none'}">
+          <button data-ap="off" class="${!autoPay?'on':''}">關閉</button>
+          <button data-ap="on" class="${autoPay?'on':''}">開啟</button></div>
+        <div id="autoPayAccWrap" style="margin-top:10px;${autoPay?'':'display:none'}">
           <span class="lb">扣款帳戶</span>
-          <select class="input" id="acAutoPayAcc">${S.accounts.filter(x=>x.id!==a.id).map(x=>`<option value="${x.id}" ${x.id===a.autoPayAccountId?"selected":""}>${x.icon} ${escapeHtml(x.name)}</option>`).join("")||'<option value="">尚無其他帳戶可選</option>'}</select>
+          <select class="input" id="acAutoPayAcc">${S.accounts.filter(x=>x.id!==a.id).map(x=>`<option value="${x.id}" ${x.id===autoPayAccountId?"selected":""}>${x.icon} ${escapeHtml(x.name)}</option>`).join("")||'<option value="">尚無其他帳戶可選</option>'}</select>
           <p class="muted" style="font-size:11px;margin:6px 2px 0">每期帳單到了繳款日，開啟本App時會自動從此帳戶轉帳付清帳單金額</p>
         </div>
       </div>
     </div>
-    <div class="fld"><span class="lb">圖示</span><div class="emoji-grid" id="acEmo">${ACC_EMO.map(e=>`<div class="em ${e===a.icon?'on':''}" data-e="${e}">${e}</div>`).join("")}</div></div>
-    <div class="fld"><span class="lb">顏色</span><div class="swatch-grid" id="acCol">${COLORS.map(c=>`<div class="sw ${c===a.color?'on':''}" data-c="${c}" style="background:${c}"></div>`).join("")}</div></div>
-    <button class="btn primary" id="acSave" style="margin-top:18px">${ed?"儲存":"新增帳戶"}</button>`);
-  let icon=a.icon,color=a.color,group=a.group||"cash",limitMode=a.limitMode||"shared";
-  let autoPay=!!a.autoPay, autoPayAccountId=a.autoPayAccountId||null;
-  let cards=(a.cards||[]).map(c=>({...c}));
+    <div class="fld"><span class="lb">圖示</span><div class="emoji-grid" id="acEmo">${ACC_EMO.map(e=>`<div class="em ${e===icon?'on':''}" data-e="${e}">${e}</div>`).join("")}</div></div>
+    <div class="fld"><span class="lb">顏色</span><div class="swatch-grid" id="acCol">${COLORS.map(c=>`<div class="sw ${c===color?'on':''}" data-c="${c}" style="background:${c}"></div>`).join("")}</div></div>
+    <button class="btn primary" id="acSave" style="margin-top:18px">${ed?"儲存":"新增帳戶"}</button>`;
+  }
+
+  function reopen(){
+    readInputs();
+    openSheet(ed?"編輯帳戶":"新增帳戶", bodyHTML());
+    bindBody();
+  }
+  function readInputs(){ const g=id=>document.getElementById(id);
+    if(g("acName")) keepInputs.name=g("acName").value;
+    if(g("acInit")) keepInputs.init=g("acInit").value;
+    if(g("acForeignFee")) keepInputs.foreignFee=g("acForeignFee").value;
+    if(g("acCur")) keepInputs.cur=g("acCur").value;
+    if(g("acBillDay")) keepInputs.billDay=g("acBillDay").value;
+    if(g("acDueDay")) keepInputs.dueDay=g("acDueDay").value;
+  }
+
+  openSheet(ed?"編輯帳戶":"新增帳戶", bodyHTML());
+  bindBody();
+
   function updateLimitModeHint(){
     const h=$("#limitModeHint"); if(!h) return;
     h.textContent = limitMode==="shared"
@@ -1193,58 +1283,106 @@ function openAccountSheet(a, back){
   }
   function renderCardsList(){
     const wrap=$("#cardsList"); if(!wrap) return;
-    wrap.innerHTML = cards.length? cards.map((c,i)=>`
-      <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
-        <input class="input" data-cf="name" data-idx="${i}" placeholder="卡別名稱，例如：聯名卡" value="${escapeHtml(c.name||"")}" style="flex:${limitMode==='perCard'?'1.4':'1'}">
-        ${limitMode==="perCard"?`<input class="input num" data-cf="limit" data-idx="${i}" placeholder="此卡別額度" type="text" inputmode="decimal" value="${c.limit||""}" style="flex:1">`:""}
-        <button class="icon-btn" data-cdel="${i}" style="width:34px;height:34px;flex:none;font-size:14px">✕</button>
-      </div>`).join("") : `<p class="muted" style="font-size:12px;margin:4px 0">尚未新增卡別，預設視為單一卡別</p>`;
+    wrap.innerHTML = cards.length? cards.map((c,i)=>{
+      const rwCount=(c.rewards||[]).length;
+      return `
+      <div style="margin-bottom:10px">
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="input" data-cf="name" data-idx="${i}" placeholder="卡別名稱，例如：聯名卡" value="${escapeHtml(c.name||"")}" style="flex:${limitMode==='perCard'?'1.4':'1'}">
+          ${limitMode==="perCard"?`<input class="input num" data-cf="limit" data-idx="${i}" placeholder="此卡別額度" type="text" inputmode="decimal" value="${c.limit||""}" style="flex:1">`:""}
+          <button class="icon-btn" data-crw="${i}" style="width:34px;height:34px;flex:none;font-size:14px" title="紅利回饋規則">🎁</button>
+          <button class="icon-btn" data-cdel="${i}" style="width:34px;height:34px;flex:none;font-size:14px">✕</button>
+        </div>
+        ${rwCount?`<div class="muted" style="font-size:11px;margin:4px 2px 0">已設定 ${rwCount} 條回饋規則</div>`:""}
+      </div>`;
+    }).join("") : `<p class="muted" style="font-size:12px;margin:4px 0">尚未新增卡別，預設視為單一卡別</p>`;
     wrap.querySelectorAll("[data-cf]").forEach(inp=>{
       inp.addEventListener("input",()=>{ const i=+inp.dataset.idx; cards[i][inp.dataset.cf]=inp.value; });
     });
     wrap.querySelectorAll("[data-cdel]").forEach(b=>b.onclick=()=>{ cards.splice(+b.dataset.cdel,1); renderCardsList(); });
+    wrap.querySelectorAll("[data-crw]").forEach(b=>b.onclick=()=>{
+      const i=+b.dataset.crw; if(!cards[i].id) cards[i].id=uid(); if(!Array.isArray(cards[i].rewards)) cards[i].rewards=[];
+      openCardRewardsSheet(cards[i], reopen);
+    });
   }
-  renderCardsList();
-  updateLimitModeHint();
-  $("#addCardBtn").onclick=()=>{ cards.push({id:uid(),name:"",limit:""}); renderCardsList(); };
-  $("#limitModeSeg").querySelectorAll("[data-lm]").forEach(el=>el.onclick=()=>{
-    limitMode=el.dataset.lm; $("#limitModeSeg").querySelectorAll("[data-lm]").forEach(x=>x.classList.toggle("on",x===el));
-    updateLimitModeHint(); renderCardsList();
-  });
-  const apSeg=$("#autoPaySeg");
-  if(apSeg) apSeg.querySelectorAll("[data-ap]").forEach(el=>el.onclick=()=>{
-    autoPay=el.dataset.ap==="on"; apSeg.querySelectorAll("[data-ap]").forEach(x=>x.classList.toggle("on",x===el));
-    const wrap=$("#autoPayAccWrap"); if(wrap) wrap.style.display=autoPay?"":"none";
-  });
-  const apAcc=$("#acAutoPayAcc");
-  if(apAcc) apAcc.addEventListener("change",()=>{ autoPayAccountId=apAcc.value||null; });
-  $("#acGrp").querySelectorAll("[data-g]").forEach(el=>el.onclick=()=>{
-    group=el.dataset.g; $("#acGrp").querySelectorAll("[data-g]").forEach(x=>x.classList.toggle("on",x===el));
-    $("#creditFields").style.display = group==="credit"? "" : "none";
-  });
-  $("#acEmo").querySelectorAll(".em").forEach(el=>el.onclick=()=>{ icon=el.dataset.e; $("#acEmo").querySelectorAll(".em").forEach(x=>x.classList.toggle("on",x===el)); });
-  $("#acCol").querySelectorAll(".sw").forEach(el=>el.onclick=()=>{ color=el.dataset.c; $("#acCol").querySelectorAll(".sw").forEach(x=>x.classList.toggle("on",x===el)); });
-  $("#acSave").onclick=()=>{
-    const name=$("#acName").value.trim(); if(!name){ toast("請輸入名稱"); return; }
-    const init=parseFloat($("#acInit").value)||0;
-    const currency=$("#acCur").value||"TWD";
-    const creditLimit = group==="credit"? (parseFloat($("#acLimit").value)||0) : 0;
-    const cleanCards = group==="credit"? cards.filter(c=>c.name&&c.name.trim()).map(c=>({id:c.id||uid(),name:c.name.trim(),limit:parseFloat(c.limit)||0})) : [];
-    const finalLimitMode = group==="credit"? limitMode : "shared";
-    const billingDay = group==="credit"? clampDay($("#acBillDay")&&$("#acBillDay").value) : 1;
-    const dueDay = group==="credit"? clampDay($("#acDueDay")&&$("#acDueDay").value) : 10;
-    const finalAutoPay = group==="credit"? autoPay : false;
-    const finalAutoPayAccountId = (group==="credit"&&autoPay)? autoPayAccountId : null;
-    if(ed){
-      Object.assign(acc(a.id),{name,icon,color,initial:init,group,currency,creditLimit,cards:cleanCards,limitMode:finalLimitMode,billingDay,dueDay,autoPay:finalAutoPay,autoPayAccountId:finalAutoPayAccountId});
-    }else{
-      S.accounts.push({id:uid(),name,icon,color,initial:init,order:S.accounts.length,group,currency,creditLimit,cards:cleanCards,limitMode:finalLimitMode,billingDay,dueDay,autoPay:finalAutoPay,autoPayAccountId:finalAutoPayAccountId});
-    }
-    save();
-    if(finalAutoPay) processCardAutoPay();
-    render(); toast(ed?"已更新":"已新增帳戶");
-    if(back) back(); else closeSheet();
-  };
+  function bindBody(){
+    renderCardsList();
+    updateLimitModeHint();
+    $("#addCardBtn").onclick=()=>{ cards.push({id:uid(),name:"",limit:"",rewards:[]}); renderCardsList(); };
+    $("#limitModeSeg").querySelectorAll("[data-lm]").forEach(el=>el.onclick=()=>{
+      limitMode=el.dataset.lm; $("#limitModeSeg").querySelectorAll("[data-lm]").forEach(x=>x.classList.toggle("on",x===el));
+      updateLimitModeHint(); renderCardsList();
+    });
+    const apSeg=$("#autoPaySeg");
+    if(apSeg) apSeg.querySelectorAll("[data-ap]").forEach(el=>el.onclick=()=>{
+      autoPay=el.dataset.ap==="on"; apSeg.querySelectorAll("[data-ap]").forEach(x=>x.classList.toggle("on",x===el));
+      const wrap=$("#autoPayAccWrap"); if(wrap) wrap.style.display=autoPay?"":"none";
+    });
+    const apAcc=$("#acAutoPayAcc");
+    if(apAcc) apAcc.addEventListener("change",()=>{ autoPayAccountId=apAcc.value||null; });
+    $("#acGrp").querySelectorAll("[data-g]").forEach(el=>el.onclick=()=>{
+      readInputs();
+      group=el.dataset.g;
+      reopen();
+    });
+    $("#acEmo").querySelectorAll(".em").forEach(el=>el.onclick=()=>{ icon=el.dataset.e; $("#acEmo").querySelectorAll(".em").forEach(x=>x.classList.toggle("on",x===el)); });
+    $("#acCol").querySelectorAll(".sw").forEach(el=>el.onclick=()=>{ color=el.dataset.c; $("#acCol").querySelectorAll(".sw").forEach(x=>x.classList.toggle("on",x===el)); });
+    $("#acSave").onclick=()=>{
+      readInputs();
+      const name=keepInputs.name.trim(); if(!name){ toast("請輸入名稱"); return; }
+      const init=parseFloat(keepInputs.init)||0;
+      const currency=keepInputs.cur||"TWD";
+      const foreignFeeRate=parseFloat(keepInputs.foreignFee)||0;
+      const creditLimit = group==="credit"? (parseFloat($("#acLimit").value)||0) : 0;
+      const cleanCards = group==="credit"? cards.filter(c=>c.name&&c.name.trim()).map(c=>({id:c.id||uid(),name:c.name.trim(),limit:parseFloat(c.limit)||0,rewards:(c.rewards||[]).filter(r=>r.tagId&&(parseFloat(r.rate)||0)>0).map(r=>({id:r.id||uid(),tagId:r.tagId,rate:parseFloat(r.rate)||0}))})) : [];
+      const finalLimitMode = group==="credit"? limitMode : "shared";
+      const billingDay = group==="credit"? clampDay(keepInputs.billDay) : 1;
+      const dueDay = group==="credit"? clampDay(keepInputs.dueDay) : 10;
+      const finalAutoPay = group==="credit"? autoPay : false;
+      const finalAutoPayAccountId = (group==="credit"&&autoPay)? autoPayAccountId : null;
+      if(ed){
+        Object.assign(acc(a.id),{name,icon,color,initial:init,group,currency,creditLimit,cards:cleanCards,limitMode:finalLimitMode,billingDay,dueDay,autoPay:finalAutoPay,autoPayAccountId:finalAutoPayAccountId,foreignFeeRate});
+      }else{
+        S.accounts.push({id:uid(),name,icon,color,initial:init,order:S.accounts.length,group,currency,creditLimit,cards:cleanCards,limitMode:finalLimitMode,billingDay,dueDay,autoPay:finalAutoPay,autoPayAccountId:finalAutoPayAccountId,foreignFeeRate});
+      }
+      save();
+      if(finalAutoPay) processCardAutoPay();
+      render(); toast(ed?"已更新":"已新增帳戶");
+      if(back) back(); else closeSheet();
+    };
+  }
+}
+function openCardRewardsSheet(card, back){
+  let rules=(card.rewards||[]).map(r=>({...r}));
+  function bodyHTML(){
+    return `
+    <p class="muted" style="font-size:12px;margin:0 0 12px">自訂此卡的回饋方案名稱與回饋率（%）。記帳時選到這張卡片，方案會顯示出來讓你選擇。</p>
+    <div id="rwList">${rules.length? rules.map((r,i)=>`
+      <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
+        <input class="input" data-rf="name" data-idx="${i}" placeholder="方案名稱，例如：一般消費、指定通路" value="${escapeHtml(r.name||"")}" style="flex:1.6">
+        <input class="input num" data-rf="rate" data-idx="${i}" placeholder="%" type="text" inputmode="decimal" value="${r.rate||""}" style="flex:0.7">
+        <button class="icon-btn" data-rdel="${i}" style="width:34px;height:34px;flex:none;font-size:14px">✕</button>
+      </div>`).join("") : `<p class="muted" style="font-size:12px;margin:4px 0">尚未設定回饋方案</p>`}</div>
+    <button class="btn ghost sm" id="addRwBtn" style="margin-top:4px">＋ 新增方案</button>
+    <button class="btn primary" id="rwSave" style="margin-top:18px">儲存</button>
+    <button class="btn ghost" id="rwBack" style="margin-top:10px">‹ 返回</button>`;
+  }
+  function reopen(){ openSheet(`🎁 ${escapeHtml(card.name||"卡別")} · 回饋方案`, bodyHTML()); bindRw(); }
+  reopen();
+  function bindRw(){
+    document.querySelectorAll("#sheetBody [data-rf]").forEach(inp=>{
+      const ev=()=>{ const i=+inp.dataset.idx; if(!rules[i]) return; rules[i][inp.dataset.rf]=inp.value; };
+      inp.addEventListener("input",ev); inp.addEventListener("change",ev);
+    });
+    document.querySelectorAll("#sheetBody [data-rdel]").forEach(b=>b.onclick=()=>{ rules.splice(+b.dataset.rdel,1); reopen(); });
+    $("#addRwBtn").onclick=()=>{ rules.push({id:uid(),name:"",rate:""}); reopen(); };
+    $("#rwBack").onclick=()=>{ if(back) back(); else closeSheet(); };
+    $("#rwSave").onclick=()=>{
+      const clean=rules.filter(r=>(r.name||"").trim()&&(parseFloat(r.rate)||0)>0).map(r=>({id:r.id||uid(),name:r.name.trim(),rate:parseFloat(r.rate)||0}));
+      card.rewards=clean; toast("已儲存回饋方案");
+      if(back) back(); else closeSheet();
+    };
+  }
 }
 
 /* ============================================================ TAB 2 專案 */
@@ -1549,8 +1687,7 @@ function renderSettings(){
 
   <div class="card">
     <div class="h-row"><h2>關於</h2><span class="chip">v${VERSION}</span></div>
-    ${CHANGELOG.map(c=>`<div style="margin-bottom:8px"><div style="font-weight:900;font-size:14px">v${c.v} <span class="muted" style="font-weight:700">· ${c.d}</span></div>
-      ${c.items.map(i=>`<div class="ver-line"><b>新</b><span>${escapeHtml(i)}</span></div>`).join("")}</div>`).join("")}
+    <button class="btn ghost" id="goChangelog" style="margin-top:4px">📋 查看更新日誌</button>
   </div>
   <div style="text-align:center;color:var(--ink-3);font-weight:800;font-size:12px;padding:6px 0 10px">MoneyBook · 記帳 v${VERSION}</div>`;
 
@@ -1567,6 +1704,15 @@ function renderSettings(){
   $("#sExportCsv").onclick=exportCSV;
   $("#sImport").onclick=importData;
   $("#sReset").onclick=()=>{ if(confirm("確定清除所有資料？建議先匯出備份。此動作無法復原。")){ localStorage.removeItem(STORE_KEY); S=seed(); save(); render(); toast("已重置"); } };
+  $("#goChangelog").onclick=openChangelogSheet;
+}
+function openChangelogSheet(){
+  const html=CHANGELOG.map(c=>`
+    <div style="margin-bottom:16px">
+      <div style="font-weight:900;font-size:14px;color:var(--brand-ink)">v${c.v} <span class="muted" style="font-weight:700;color:var(--ink-3)">· ${c.d}</span></div>
+      ${c.items.map(i=>`<div class="ver-line"><b>新</b><span>${escapeHtml(i)}</span></div>`).join("")}
+    </div>`).join("");
+  openSheet(`📋 更新日誌 · v${VERSION}`, html);
 }
 function catChip(c){ return `<button class="pick" data-ecat="${c.id}"><span class="dot" style="background:${c.color}">${c.icon}</span>${escapeHtml(c.name)}</button>`; }
 
@@ -1818,7 +1964,7 @@ function txnRowHTML(t, readOnly, showDate){
   return `<${tag} class="row${readOnly?"":" txn-row"}" style="width:100%;text-align:left"${readOnly?"":` data-txn="${t.id}"`}>
     <div class="av" style="width:38px;height:38px;font-size:18px;border-radius:11px;background:${color}">${icon}</div>
     <div style="min-width:0"><div class="nm">${escapeHtml(title)}</div>
-      <div class="sub" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px">${dateLabel}${escapeHtml(sub)}${tagStr?` <span class="tag-mini">${escapeHtml(tagStr)}</span>`:""}${t.recurringId?` <span class="tag-mini">🔁週期</span>`:""}</div></div>
+      <div class="sub" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px">${dateLabel}${escapeHtml(sub)}${tagStr?` <span class="tag-mini">${escapeHtml(tagStr)}</span>`:""}${t.recurringId?` <span class="tag-mini">🔁週期</span>`:""}${(t.rewardAmount>0)?` <span class="tag-mini" style="color:var(--income)">🎁+${moneyCur(t.rewardAmount,curCode)}</span>`:""}</div></div>
     <div class="amt num ${amtClass}">${sign}${curPrefix}${fmt(amtVal)}</div></${tag}>`;
 }
 function bindTxnRows(){ document.querySelectorAll(".txn-row").forEach(b=>b.onclick=()=>{ const t=S.transactions.find(x=>x.id===b.dataset.txn); if(t) openTxnSheet(t); }); }
@@ -1829,7 +1975,12 @@ function openTxnSheet(opts){
   const initType=opts.type||"expense";
   let userPickedAccount = !!opts.accountId;   // 從帳戶頁進來＝已指定帳戶，不自動覆蓋
   let model;
-  if(editing){ model={...editing}; model.tagIds=[...(editing.tagIds||[])]; }
+  if(editing){
+    model={...editing}; model.tagIds=[...(editing.tagIds||[])];
+    model.surchargeService = (editing.surcharges||[]).some(s=>s.type==="service");
+    model.surchargeForeign = (editing.surcharges||[]).some(s=>s.type==="foreign");
+    model.selectedRewardId = editing.selectedRewardId||null;
+  }
   else model={
     type:initType, amount:opts.amount||0,
     accountId:opts.accountId|| null,
@@ -1837,9 +1988,10 @@ function openTxnSheet(opts){
     categoryId:opts.categoryId|| (initType!=="transfer"? mostUsedCategory(initType):null),
     tagIds:[...(opts.tagIds||[])], projectId:opts.projectId||null, cardId:opts.cardId||null,
     note:opts.note||"", date:opts.date||calSel||todayStr(),
-    recurring:false, recFreq:"monthly", recEndMode:"count", recCount:12
+    recurring:false, recFreq:"monthly", recEndMode:"count", recCount:12,
+    surchargeService:false, surchargeForeign:false, selectedRewardId:null
   };
-  const initExpr=model.amount? String(model.amount):"";
+  const initExpr = (editing && typeof editing.baseAmount==="number") ? String(editing.baseAmount) : (model.amount? String(model.amount):"");
   const catsFor=type=>S.categories.filter(c=>c.type===type);
   if(!editing && model.type!=="transfer" && !model.categoryId){ const l=catsFor(model.type); model.categoryId=l[0]?l[0].id:null; }
   if(!editing && !opts.accountId){ model.accountId = recommendAccount(model.type!=="transfer"? model.categoryId:null); }
@@ -1869,12 +2021,22 @@ function openTxnSheet(opts){
       <div class="fld"><span class="lb">類別 <span class="muted" style="font-weight:700;font-size:11px">· 已依使用習慣推薦</span></span>
         <div class="pick-grid" id="catPick">${catsFor(model.type).map(c=>`<button class="pick ${c.id===model.categoryId?'on':''}" data-cat="${c.id}"><span class="dot" style="background:${c.color}">${c.icon}</span>${escapeHtml(c.name)}</button>`).join("")||'<span class="muted" style="font-size:12px">尚無類別，可到設定新增</span>'}</div></div>
       <div class="fld"><span class="lb">標籤（可多選）</span>
-        <div class="pick-grid" id="tagPick">${S.tags.map(t=>`<button class="pick ${model.tagIds.includes(t.id)?'on':''}" data-tg="${t.id}"><span class="dot" style="background:${t.color}"></span>${escapeHtml(t.name)}</button>`).join("")}<button class="pick" id="addTagInline" style="border:2px dashed var(--line)">＋ 新增</button></div></div>
+        <div class="pick-grid" id="tagPick"></div></div>
       <label class="fld"><span class="lb">帳戶${(!editing&&!userPickedAccount)?' <span class="muted" style="font-weight:700;font-size:11px">· 依類別自動推薦</span>':''}</span><select class="input" id="acc">${accountOptionsHTML(model.accountId)}</select></label>
       <div class="fld" id="cardPickWrap" style="${curCards.length?"":"display:none"}">
         <span class="lb">卡別</span>
         <select class="input" id="cardSel">${curCards.map(c=>`<option value="${c.id}" ${model.cardId===c.id?"selected":""}>${escapeHtml(c.name)}</option>`).join("")}</select>
       </div>
+      <div id="rewardPickWrap"></div>
+      ${model.type==="expense"?`
+      <div class="fld" id="surchargeWrap">
+        <span class="lb">金額加成（選填）</span>
+        <div class="fab-row">
+          <button class="pick ${model.surchargeService?'on':''}" data-sc="service">🧾 +10% 服務費</button>
+          ${(curAcc&&curAcc.foreignFeeRate>0)?`<button class="pick ${model.surchargeForeign?'on':''}" data-sc="foreign">🌍 +${curAcc.foreignFeeRate}% 國外手續費</button>`:""}
+        </div>
+        <div id="surchargeInfo"></div>
+      </div>`:""}
       <label class="fld"><span class="lb">專案（選填）</span><select class="input" id="prj"><option value="">— 無 —</option>${S.projects.map(p=>`<option value="${p.id}" ${p.id===model.projectId?"selected":""}>${p.icon} ${escapeHtml(p.name)}</option>`).join("")}</select></label>
     `}
     <label class="fld"><span class="lb">日期</span><input class="input" id="txDate" type="date" value="${model.date}"></label>
@@ -1935,13 +2097,20 @@ function openTxnSheet(opts){
         const rec=recommendAccount(model.categoryId);
         if(rec && rec!==model.accountId){
           model.accountId=rec; ensureCardDefault();
-          const sel=$("#acc"); if(sel) sel.value=rec;
-          updateCurDisplay(); refreshCardPicker();
           const a=acc(rec); if(a) toast("已推薦帳戶："+a.name);
+          const keep=$("#amtInput")?$("#amtInput").value:""; $("#sheetBody").innerHTML=bodyHTML(); bindBody();
+          const el=$("#amtInput"); if(el) el.value=keep; updateCurDisplay();
         }
       }
     });
-    document.querySelectorAll("#sheetBody [data-tg]").forEach(b=>b.onclick=()=>{ const id=b.dataset.tg; const i=model.tagIds.indexOf(id); if(i<0) model.tagIds.push(id); else model.tagIds.splice(i,1); b.classList.toggle("on"); });
+    refreshTagPicker();
+    refreshRewardPicker();
+    document.querySelectorAll("#sheetBody [data-sc]").forEach(b=>b.onclick=()=>{
+      if(b.dataset.sc==="service") model.surchargeService=!model.surchargeService;
+      else if(b.dataset.sc==="foreign") model.surchargeForeign=!model.surchargeForeign;
+      b.classList.toggle("on");
+      updateSurchargeDisplay(); updateRewardDisplay();
+    });
     document.querySelectorAll("#sheetBody [data-rec]").forEach(b=>b.onclick=()=>{
       model.recurring = b.dataset.rec==="on";
       readInputs(); const keep=$("#amtInput")?$("#amtInput").value:""; $("#sheetBody").innerHTML=bodyHTML(); bindBody();
@@ -1953,18 +2122,67 @@ function openTxnSheet(opts){
       readInputs(); const keep=$("#amtInput")?$("#amtInput").value:""; $("#sheetBody").innerHTML=bodyHTML(); bindBody();
       const el=$("#amtInput"); if(el) el.value=keep; updateCurDisplay();
     });
-    const addT=$("#addTagInline"); if(addT) addT.onclick=()=>{ const name=prompt("新增標籤名稱"); if(name&&name.trim()){ const nt={id:uid(),name:name.trim(),color:COLORS[S.tags.length%COLORS.length]}; S.tags.push(nt); model.tagIds.push(nt.id); save(); readInputs(); const keep=$("#amtInput")?$("#amtInput").value:""; $("#sheetBody").innerHTML=bodyHTML(); bindBody(); const el=$("#amtInput"); if(el) el.value=keep; updateCurDisplay(); } };
     document.querySelectorAll("#sheetBody #kp button").forEach(b=>b.onclick=()=>press(b.dataset.k));
     const amtEl=$("#amtInput");
     if(amtEl) amtEl.addEventListener("input",()=>{ amtEl.value=amtEl.value.replace(/[^0-9+\-*/.]/g,""); updateAmt(); });
     const cardSel=$("#cardSel");
-    if(cardSel) cardSel.addEventListener("change",()=>{ model.cardId=cardSel.value; });
+    if(cardSel) cardSel.addEventListener("change",()=>{ model.cardId=cardSel.value; model.selectedRewardId=null; refreshTagPicker(); refreshRewardPicker(); });
     const accSel=$("#acc")||$("#fAcc");
-    if(accSel) accSel.addEventListener("change",()=>{ model.accountId=accSel.value; userPickedAccount=true; if($("#acc")){ ensureCardDefault(); } updateCurDisplay(); refreshCardPicker(); });
+    if(accSel) accSel.addEventListener("change",()=>{
+      model.accountId=accSel.value; userPickedAccount=true;
+      if($("#acc")){
+        ensureCardDefault();
+        const keep=$("#amtInput")?$("#amtInput").value:""; $("#sheetBody").innerHTML=bodyHTML(); bindBody();
+        const el=$("#amtInput"); if(el) el.value=keep; updateCurDisplay();
+      } else { updateCurDisplay(); }
+    });
     const toSel=$("#tAcc");
     if(toSel) toSel.addEventListener("change",()=>{ model.toAccountId=toSel.value; });
     const noteEl=$("#txNote");
     if(noteEl && !editing) noteEl.addEventListener("blur", applyNoteSuggestion);
+  }
+  function refreshTagPicker(){
+    const wrap=$("#tagPick"); if(!wrap || model.type==="transfer") return;
+    wrap.innerHTML = S.tags.map(t=>`<button class="pick ${model.tagIds.includes(t.id)?'on':''}" data-tg="${t.id}"><span class="dot" style="background:${t.color}"></span>${escapeHtml(t.name)}</button>`).join("")
+      + `<button class="pick" id="addTagInline" style="border:2px dashed var(--line)">＋ 新增</button>`;
+    wrap.querySelectorAll("[data-tg]").forEach(b=>b.onclick=()=>{
+      const id=b.dataset.tg; const i=model.tagIds.indexOf(id); if(i<0) model.tagIds.push(id); else model.tagIds.splice(i,1);
+      b.classList.toggle("on");
+    });
+    const addT=$("#addTagInline");
+    if(addT) addT.onclick=()=>{
+      const name=prompt("新增標籤名稱");
+      if(name&&name.trim()){
+        const nt={id:uid(),name:name.trim(),color:COLORS[S.tags.length%COLORS.length]};
+        S.tags.push(nt); model.tagIds.push(nt.id); save(); refreshTagPicker();
+      }
+    };
+  }
+  function refreshRewardPicker(){
+    const wrap=$("#rewardPickWrap"); if(!wrap) return;
+    const a=acc(model.accountId); const card=a?cardOf(a,model.cardId):null;
+    const rules=card? rewardRulesForCard(card):[];
+    if(!rules.length || model.type!=="expense"){ wrap.innerHTML=""; return; }
+    // validate selectedRewardId still exists in this card's rules
+    if(model.selectedRewardId && !rules.some(r=>r.id===model.selectedRewardId)) model.selectedRewardId=null;
+    wrap.innerHTML=`<div class="fld"><span class="lb">🎁 紅利回饋方案</span>
+      <div class="pick-grid">${[{id:null,name:"不套用",rate:0},...rules].map(r=>`<button class="pick ${(model.selectedRewardId||null)===r.id?'on':''}" data-rw="${r.id||''}">
+        ${r.id?`${escapeHtml(r.name)} <span class="tag-mini" style="color:var(--income)">+${r.rate}%</span>`:"不套用"}</button>`).join("")}</div>
+      <div id="rewardInfo" style="margin-top:6px"></div></div>`;
+    wrap.querySelectorAll("[data-rw]").forEach(b=>b.onclick=()=>{
+      model.selectedRewardId=b.dataset.rw||null;
+      wrap.querySelectorAll("[data-rw]").forEach(x=>x.classList.toggle("on",x===b));
+      updateRewardDisplay();
+    });
+    updateRewardDisplay();
+  }
+  function updateRewardDisplay(){
+    const wrap=$("#rewardInfo"); if(!wrap) return;
+    const a=acc(model.accountId); const card=a?cardOf(a,model.cardId):null;
+    if(!card||!model.selectedRewardId){ wrap.innerHTML=""; return; }
+    const est=computeRewardEstimate(card, model.selectedRewardId, getFinalAmount());
+    if(!est.rule){ wrap.innerHTML=""; return; }
+    wrap.innerHTML=`<div class="muted" style="font-size:11.5px;color:var(--income)">預估回饋 ${est.rate}% × ${moneyCur(getFinalAmount(),currentCurCode())} ≈ ${moneyCur(est.amount,currentCurCode())}</div>`;
   }
   function readInputs(){ const g=id=>document.getElementById(id);
     if(g("acc")) model.accountId=g("acc").value; if(g("fAcc")) model.accountId=g("fAcc").value; if(g("tAcc")) model.toAccountId=g("tAcc").value;
@@ -1984,7 +2202,7 @@ function openTxnSheet(opts){
     if(match.accountId && match.accountId!==model.accountId){
       model.accountId=match.accountId; userPickedAccount=true;
       const sel=document.getElementById("acc"); if(sel) sel.value=match.accountId;
-      ensureCardDefault(); refreshCardPicker();
+      ensureCardDefault(); refreshCardPicker(); refreshTagPicker(); refreshRewardPicker();
       updateCurDisplay();
       changed=true;
     }
@@ -2015,20 +2233,49 @@ function openTxnSheet(opts){
     if(!cds.length){ wrap.style.display="none"; wrap.innerHTML=""; return; }
     wrap.style.display="";
     wrap.innerHTML=`<span class="lb">卡別</span><select class="input" id="cardSel">${cds.map(c=>`<option value="${c.id}" ${model.cardId===c.id?"selected":""}>${escapeHtml(c.name)}</option>`).join("")}</select>`;
-    const sel=$("#cardSel"); if(sel) sel.addEventListener("change",()=>{ model.cardId=sel.value; });
+    const sel=$("#cardSel"); if(sel) sel.addEventListener("change",()=>{ model.cardId=sel.value; model.selectedRewardId=null; refreshTagPicker(); refreshRewardPicker(); });
   }
   function updateCurDisplay(){
     const cs=$("#curSym"); if(cs) cs.textContent=currencySymbol(currentCurCode());
     updateAmt();
   }
+  function getBaseAmount(){ const el=$("#amtInput"); return el? (parseFloat(safeCalc(el.value))||0):0; }
+  function getForeignRate(){ const a=acc(model.accountId); return (a&&a.foreignFeeRate>0)? a.foreignFeeRate:0; }
+  function getSurchargeResult(){
+    const base=getBaseAmount();
+    return computeSurcharges(base,{
+      service: model.type==="expense" && !!model.surchargeService,
+      foreign: model.type==="expense" && !!model.surchargeForeign,
+      foreignRate: getForeignRate()
+    });
+  }
+  function getFinalAmount(){ const sc=getSurchargeResult(); return sc.parts.length? sc.final : Math.round(getBaseAmount()*100)/100; }
+  function updateSurchargeDisplay(){
+    const wrap=$("#surchargeInfo"); if(!wrap) return;
+    const sc=getSurchargeResult();
+    if(!sc.parts.length){ wrap.innerHTML=""; return; }
+    const cur=currentCurCode();
+    wrap.innerHTML=`<div class="muted" style="font-size:11.5px;margin-top:6px">原始 ${moneyCur(getBaseAmount(),cur)} ${sc.parts.map(p=>`+ ${p.label} ${moneyCur(p.amount,cur)}`).join(" ")} = <b style="color:var(--ink)">${moneyCur(sc.final,cur)}</b></div>`;
+  }
+  function updateRewardDisplay(){
+    const wrap=$("#rewardInfo"); if(!wrap) return;
+    if(model.type!=="expense"){ wrap.innerHTML=""; return; }
+    const a=acc(model.accountId); const card=a?cardOf(a,model.cardId):null;
+    if(!card){ wrap.innerHTML=""; return; }
+    const est=computeRewardEstimate(card, model.tagIds, getFinalAmount());
+    if(!est.rules.length){ wrap.innerHTML=""; return; }
+    wrap.innerHTML=`<div class="muted" style="font-size:11.5px;margin-top:6px;color:var(--income)">🎁 預估回饋 ${est.rate}%　≈ ${moneyCur(est.amount,currentCurCode())}</div>`;
+  }
   function updateAmt(){
     const el=$("#amtInput"),ev=$("#exprView"); if(!el||!ev) return;
     const v=el.value;
     ev.textContent=(v&&/[+\-*/]/.test(v))? "= "+moneyCur(parseFloat(safeCalc(v))||0, currentCurCode()) : "";
-  }
-  function commit(){
-    readInputs(); const raw=$("#amtInput")?$("#amtInput").value:"0"; const amt=parseFloat(safeCalc(raw));
-    if(!amt||amt<=0){ toast("請輸入金額"); return; }
+    updateSurchargeDisplay();
+    updateRewardDisplay();
+  }  function commit(){
+    readInputs();
+    const base=getBaseAmount();
+    if(!base||base<=0){ toast("請輸入金額"); return; }
     if(model.type!=="transfer"){
       const curAcc=acc(model.accountId); const curCards=(curAcc&&curAcc.cards)||[];
       if(curCards.length && !curCards.some(c=>c.id===model.cardId)){ toast("這個帳戶有多個卡別，請選擇是哪一張"); return; }
@@ -2039,26 +2286,46 @@ function openTxnSheet(opts){
       const fa=acc(model.accountId), ta=acc(model.toAccountId);
       if(fa && ta && accCurrency(fa)!==accCurrency(ta)){ toast("不同幣別帳戶間目前不支援直接轉帳換匯，請改用調整餘額分別記錄"); return; }
     }
+    const sc = model.type==="expense"? getSurchargeResult() : {parts:[],surchargeTotal:0,final:Math.round(base*100)/100};
+    const finalAmt = sc.parts.length? sc.final : Math.round(base*100)/100;
+    let finalTagIds = model.type==="transfer"? [] : [...model.tagIds];
+    if(model.type==="expense"){
+      sc.parts.forEach(p=>{
+        const tagName = p.type==="service"? "服務費" : "國外交易手續費";
+        const t=ensureSystemTag(tagName, p.type==="service"? "#F59E0B":"#2E8FF0");
+        if(!finalTagIds.includes(t.id)) finalTagIds.push(t.id);
+      });
+    }
+    let rewardAmount=0, rewardRate=0;
+    if(model.type==="expense"){
+      const a=acc(model.accountId); const card=a?cardOf(a,model.cardId):null;
+      if(card && model.selectedRewardId){ const est=computeRewardEstimate(card, model.selectedRewardId, finalAmt); rewardAmount=est.amount; rewardRate=est.rate; }
+    }
     if(!editing && model.recurring){
       const count = model.recEndMode==="count"? Math.max(1,parseInt(model.recCount)||1) : null;
       const rule={
-        id:uid(), type:model.type, amount:Math.round(amt*100)/100,
+        id:uid(), type:model.type, amount:finalAmt,
         accountId:model.accountId, note:model.note,
         frequency:model.recFreq||"monthly", endMode:model.recEndMode||"count",
         count, generatedCount:0, nextDate:model.date||todayStr(), dayOfMonth:parseD(model.date||todayStr()).getDate(),
         active:true, createdAt:Date.now()
       };
       if(model.type==="transfer"){ rule.toAccountId=model.toAccountId; rule.tagIds=[]; }
-      else { rule.categoryId=model.categoryId||null; rule.projectId=model.projectId||null; rule.tagIds=[...model.tagIds]; rule.cardId=model.cardId||null; }
+      else { rule.categoryId=model.categoryId||null; rule.projectId=model.projectId||null; rule.tagIds=finalTagIds; rule.cardId=model.cardId||null; }
       S.recurring=S.recurring||[]; S.recurring.push(rule);
       processRecurring();
       save(); closeSheet(); render();
       toast(`已設定週期性記帳（${FREQ_LABEL[rule.frequency]||rule.frequency}${count?`，共${count}次`:'，無期限'}）`);
       return;
     }
-    const rec={ id:editing?editing.id:uid(), type:model.type, amount:Math.round(amt*100)/100, accountId:model.accountId, date:model.date||todayStr(), note:model.note, tagIds:model.type==="transfer"?[]:[...model.tagIds], ts:editing?editing.ts:Date.now() };
+    const rec={ id:editing?editing.id:uid(), type:model.type, amount:finalAmt, accountId:model.accountId, date:model.date||todayStr(), note:model.note, tagIds:finalTagIds, ts:editing?editing.ts:Date.now() };
     if(model.type==="transfer") rec.toAccountId=model.toAccountId;
-    else { rec.categoryId=model.categoryId||null; rec.projectId=model.projectId||null; rec.cardId=model.cardId||null; }
+    else {
+      rec.categoryId=model.categoryId||null; rec.projectId=model.projectId||null; rec.cardId=model.cardId||null;
+      if(sc.parts.length){ rec.baseAmount=base; rec.surcharges=sc.parts; } else { rec.baseAmount=null; rec.surcharges=[]; }
+      rec.selectedRewardId = model.selectedRewardId||null;
+      if(rewardAmount>0){ rec.rewardAmount=rewardAmount; rec.rewardRate=rewardRate; } else { rec.rewardAmount=0; rec.rewardRate=0; }
+    }
     if(editing){ const i=S.transactions.findIndex(t=>t.id===editing.id); S.transactions[i]=rec; } else S.transactions.push(rec);
     save(); closeSheet(); render(); toast(editing?"已更新":"已記錄");
   }

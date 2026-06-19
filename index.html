@@ -211,9 +211,12 @@ details summary{font-weight:800;font-size:13px;color:var(--brand-ink);cursor:poi
 /* ============================================================
    記帳 MoneyBook
    ============================================================ */
-const VERSION = "1.14.5";
+const VERSION = "1.14.6";
 const SCHEMA = 10;
 const CHANGELOG = [
+  {v:"1.14.6", d:"2026-06-18", items:[
+    "Google OAuth Client ID 內建為預設值，設定頁會自動帶入，不用每次手動輸入（仍可自行修改）"
+  ]},
   {v:"1.14.5", d:"2026-06-18", items:[
     "帳戶明細與報表分類明細的日期標頭改為置頂（sticky），捲動時日期不會被刷走"
   ]},
@@ -308,6 +311,7 @@ const CHANGELOG = [
   ]}
 ];
 const STORE_KEY = "moneybook_v1";
+const DEFAULT_GOOGLE_CLIENT_ID = "468230419444-h6pli4nqeu7uiuko9m0oefpnu68eqorf.apps.googleusercontent.com";
 const CUR = "$";
 const COLORS = ["#6C4FE0","#F0445B","#13B47A","#2E8FF0","#F59E0B","#E0497B","#0EA5A5","#8B5CF6","#EF5DA8","#22A06B","#3B82F6","#F97316","#64748B","#111827"];
 const ACC_EMO = ["💵","🏦","💳","🐷","📈","💰","🪙","💴","🧧","🏧","📱","💱"];
@@ -1519,7 +1523,7 @@ function renderSettings(){
   <div class="card">
     <div class="h-row"><h2>Google 雲端同步</h2><span class="chip" style="color:${signed?'var(--income)':'var(--ink-3)'}">${signed?'已登入':'未登入'}</span></div>
     <label class="fld" style="margin-top:4px"><span class="lb">Google OAuth Client ID</span>
-      <input class="input" id="gClientId" placeholder="xxxxxx.apps.googleusercontent.com" value="${escapeHtml(S.settings.googleClientId||"")}"></label>
+      <input class="input" id="gClientId" placeholder="xxxxxx.apps.googleusercontent.com" value="${escapeHtml(S.settings.googleClientId||DEFAULT_GOOGLE_CLIENT_ID)}"></label>
     <div class="btn-row"><button class="btn ghost" id="gLogin">${signed?'重新登入':'登入 Google'}</button><button class="btn ghost" id="gSaveCid">儲存 ID</button></div>
     <div class="btn-row"><button class="btn ghost" id="gBackup">☁️ 備份到雲端</button><button class="btn ghost" id="gRestore">⬇️ 從雲端還原</button></div>
     <div class="note-box">資料會存到你 Google 雲端硬碟的私密 App 區（僅本 App 可讀）。需先自備 Client ID，且網頁要部署在已授權網域（如 GitHub Pages）。</div>
@@ -1555,8 +1559,8 @@ function renderSettings(){
   $("#goTag").onclick=openTagManageSheet;
   $("#goFx").onclick=openFxRateSheet;
   $("#goRec").onclick=openRecurringManageSheet;
-  $("#gSaveCid").onclick=()=>{ S.settings.googleClientId=$("#gClientId").value.trim(); save(); toast("已儲存 Client ID"); };
-  $("#gLogin").onclick=()=>{ S.settings.googleClientId=$("#gClientId").value.trim(); save(); googleSignIn(()=>{ toast("Google 已登入"); renderSettings(); }); };
+  $("#gSaveCid").onclick=()=>{ S.settings.googleClientId=$("#gClientId").value.trim()||DEFAULT_GOOGLE_CLIENT_ID; save(); toast("已儲存 Client ID"); };
+  $("#gLogin").onclick=()=>{ S.settings.googleClientId=$("#gClientId").value.trim()||DEFAULT_GOOGLE_CLIENT_ID; save(); googleSignIn(()=>{ toast("Google 已登入"); renderSettings(); }); };
   $("#gBackup").onclick=()=>googleBackup();
   $("#gRestore").onclick=()=>googleRestore();
   $("#sExport").onclick=exportData;
@@ -1746,7 +1750,7 @@ function loadGIS(cb){
   document.head.appendChild(s);
 }
 function googleSignIn(cb){
-  const cid=(S.settings.googleClientId||"").trim();
+  const cid=(S.settings.googleClientId||DEFAULT_GOOGLE_CLIENT_ID||"").trim();
   if(!cid){ toast("請先填入 Google Client ID"); return; }
   loadGIS(()=>{
     try{

@@ -256,7 +256,7 @@ details summary{font-weight:800;font-size:13px;color:var(--brand-ink);cursor:poi
 /* ============================================================
    記帳 MoneyBook
    ============================================================ */
-const VERSION = "1.19.0";
+const VERSION = "1.19.1";
 const SCHEMA = 13;
 const CHANGELOG = [
   {v:"1.19.0", d:"2026-06-20", items:[
@@ -781,35 +781,66 @@ function computeRewardEstimate(card, selectedRewardId, finalAmount, accountId){
   if(!rule) return {rule:null,rate:0,amount:0,note:""};
   const rate=parseFloat(rule.rate)||0;
   const minSpend=parseFloat(rule.minSpendPerTx)||0;
-  if(minSpend>0&&finalAmount<minSpend) return {rule,rate,amount:0,note:`單筆未達${fmt(minSpend)}元門檻，本筆無回饋`};
-  let raw=finalAmount*rate/100;
-  let amount = (rule.rounding==="floor")? Math.floor(raw) : (rule.rounding==="keep")? Math.round(raw*100)/100 : Math.round(raw);
   const perTxCap=parseFloat(rule.maxRewardPerTx)||0;
-  if(perTxCap>0 && amount>perTxCap) amount=perTxCap;
   const cap=parseFloat(rule.maxRewardPerMonth)||0;
   const notes=[];
-  if(perTxCap>0) notes.push(`單筆上限 ${fmt(perTxCap)}`);
-  // Enforce period cap: check already-earned in current billing cycle
-  let alreadyEarned=0;
-  if(cap>0 && accountId){
+
+  if(rule.calcBasis==="perTx"){
+    // ── Per-transaction mode ──
+    if(minSpend>0&&finalAmount<minSpend) return {rule,rate,amount:0,note:`單筆未達${fmt(minSpend)}元門檻，本筆無回饋`};
+    let raw=finalAmount*rate/100;
+    let amount=(rule.rounding==="floor")?Math.floor(raw):(rule.rounding==="keep")?Math.round(raw*100)/100:Math.round(raw);
+    if(perTxCap>0&&amount>perTxCap) amount=perTxCap;
+    if(perTxCap>0) notes.push(`單筆上限 ${fmt(perTxCap)}`);
+    let alreadyEarned=0;
+    if(cap>0&&accountId){
+      const a2=acc(accountId);
+      if(a2){ const cy=listRecentCycles(a2,1); if(cy.length) alreadyEarned=ruleRewardEarned(accountId,rule.id,dstr(cy[0].start),dstr(cy[0].end)); }
+      const remaining=Math.max(0,cap-alreadyEarned);
+      if(remaining<=0) return {rule,rate,amount:0,cap,alreadyEarned,note:`本期已達上限 ${fmt(cap)}，不再回饋`};
+      if(amount>remaining) amount=Math.round(remaining*100)/100;
+      notes.push(`每期上限 ${fmt(cap)}（已用 ${fmt(alreadyEarned)}，剩餘 ${fmt(Math.max(0,cap-alreadyEarned))}）`);
+    } else if(cap>0) notes.push(`每期上限 ${fmt(cap)}`);
+    return {rule,rate,amount,cap,alreadyEarned,note:notes.join("・")};
+  }
+
+  // ── Billing cycle mode (monthly) ──
+  // 1. Get current billing cycle
+  let cycleStart="", cycleEnd="", cycleSpending=0;
+  if(accountId){
     const a2=acc(accountId);
     if(a2){
-      const cycles2=listRecentCycles(a2,1);
-      if(cycles2.length){
-        alreadyEarned=ruleRewardEarned(accountId, rule.id, dstr(cycles2[0].start), dstr(cycles2[0].end));
+      const cy=listRecentCycles(a2,1);
+      if(cy.length){
+        cycleStart=dstr(cy[0].start); cycleEnd=dstr(cy[0].end);
+        // Sum all expenses in this cycle for this account (excluding current unsaved tx)
+        cycleSpending=S.transactions.filter(t=>
+          t.type==="expense" && !t.subType && t.accountId===accountId &&
+          t.date>=cycleStart && t.date<=cycleEnd
+        ).reduce((s,t)=>s+t.amount,0);
       }
     }
-    const remaining=Math.max(0, cap - alreadyEarned);
-    if(remaining<=0){
-      return {rule, rate, amount:0, cap, alreadyEarned, note:`本期已達上限 ${fmt(cap)}，不再回饋`};
-    }
-    if(amount>remaining) amount=Math.round(remaining*100)/100;
-    notes.push(`每期上限 ${fmt(cap)}（已用 ${fmt(alreadyEarned)}，剩餘 ${fmt(remaining)}）`);
-  } else if(cap>0){
-    notes.push(`每期上限 ${fmt(cap)}`);
   }
-  const note=notes.join("・");
-  return {rule, rate, amount, cap, alreadyEarned, note};
+  // 2. Add current transaction amount
+  const totalSpending=cycleSpending+finalAmount;
+  // 3. Calculate total cycle reward
+  let totalReward=totalSpending*rate/100;
+  totalReward=(rule.rounding==="floor")?Math.floor(totalReward):(rule.rounding==="keep")?Math.round(totalReward*100)/100:Math.round(totalReward);
+  if(cap>0&&totalReward>cap) totalReward=cap;
+  // 4. Get already-earned reward for this rule in this cycle
+  let alreadyEarned=0;
+  if(cycleStart){
+    alreadyEarned=ruleRewardEarned(accountId,rule.id,cycleStart,cycleEnd);
+  }
+  // 5. This transaction's reward = total should-have minus already-earned
+  let amount=Math.max(0, Math.round((totalReward-alreadyEarned)*100)/100);
+  if(perTxCap>0&&amount>perTxCap){ amount=perTxCap; notes.push(`單筆上限 ${fmt(perTxCap)}`); }
+  if(cap>0) notes.push(`每期上限 ${fmt(cap)}（本期消費 ${fmt(totalSpending)}→ 應回饋 ${fmt(totalReward)}，已入帳 ${fmt(alreadyEarned)}）`);
+  else notes.push(`本期消費 ${fmt(totalSpending)} × ${rate}% = ${fmt(totalReward)}，已入帳 ${fmt(alreadyEarned)}`);
+  if(amount<=0&&alreadyEarned>=totalReward){
+    return {rule,rate,amount:0,cap,alreadyEarned,note:`本期回饋已足額（應 ${fmt(totalReward)}，已 ${fmt(alreadyEarned)}）`};
+  }
+  return {rule,rate,amount,cap,alreadyEarned,note:notes.join("・")};
 }
 const SURCHARGE_SERVICE_RATE=10;
 function computeSurcharges(base, opts){
@@ -983,9 +1014,11 @@ function findNoteMatch(note,type){
   return matches.reduce((a,b)=>(b.ts>a.ts?b:a));
 }
 function netWorthAt(dateStr){
-  let b=S.accounts.reduce((s,a)=>s+(a.initial||0)*fxRate(accCurrency(a)),0);
+  const included=new Set(S.accounts.filter(a=>a.includeInAssets!==false).map(a=>a.id));
+  let b=S.accounts.filter(a=>included.has(a.id)).reduce((s,a)=>s+(a.initial||0)*fxRate(accCurrency(a)),0);
   for(const t of S.transactions){ if(t.date>dateStr) continue;
-    const a=acc(t.accountId); const rate=fxRate(a?accCurrency(a):"TWD");
+    const a=acc(t.accountId); if(!a||!included.has(a.id)) continue;
+    const rate=fxRate(accCurrency(a));
     if(t.type==="income") b+=t.amount*rate; else if(t.type==="expense") b-=t.amount*rate; else if(t.type==="adjust") b+=t.amount*rate; }
   return b;
 }
@@ -1144,11 +1177,14 @@ function renderAccounts(){
         if(isCredit && cards2.length){
           // ── Credit card with expandable card rows ──
           const cycleRwd=currentCycleReward(a);
-          html+=`<div class="cc-wrap">
+          const excluded=a.includeInAssets===false;
+          const exBadge=excluded?' <span class="tag-mini" style="color:var(--ink-3)">不計入資產</span>':"";
+          const exStyle=excluded?'opacity:.5':'';
+          html+=`<div class="cc-wrap" style="${exStyle}">
             <button class="row cc-main" style="width:100%;text-align:left" data-acc="${a.id}">
               <div class="av" style="background:${a.color}">${a.icon||"💳"}</div>
               <div style="flex:1;min-width:0">
-                <div class="nm">${escapeHtml(a.name)}${accCurrency(a)!=="TWD"?` <span class="tag-mini">${accCurrency(a)}</span>`:""}</div>
+                <div class="nm">${escapeHtml(a.name)}${accCurrency(a)!=="TWD"?` <span class="tag-mini">${accCurrency(a)}</span>`:""}${exBadge}</div>
                 ${limit>0?`<div style="display:flex;align-items:center;gap:6px;margin-top:3px">
                   <div style="flex:1;height:4px;background:var(--line);border-radius:2px;overflow:hidden"><div style="width:${pctUsed}%;height:100%;background:${barColor};border-radius:2px"></div></div>
                   <span style="font-size:10px;font-weight:800;color:${barColor};flex:none">${pctUsed}%</span>
@@ -1156,7 +1192,7 @@ function renderAccounts(){
                 <div class="sub" style="font-size:10.5px">額度 ${moneyAcc(used,a)} / ${moneyAcc(limit,a)}${cycleRwd>0?" · 🎁+"+moneyAcc(cycleRwd,a):""}</div>`
                 :`<div class="sub">點擊 · 調整／轉帳／明細${cycleRwd>0?" · 🎁+"+moneyAcc(cycleRwd,a):""}</div>`}
               </div>
-              <div class="amt num ${bal<0?'neg':''}">${moneyAcc(bal,a)}</div>
+              <div class="amt num ${bal<0?'neg':''}" ${excluded?'style="color:var(--ink-3)"':''}>${moneyAcc(bal,a)}</div>
             </button>`;
           // Card sub-rows
           const today2=todayStr();
@@ -1171,21 +1207,25 @@ function renderAccounts(){
             activeRules.forEach(r=>{
               const cap=parseFloat(r.maxRewardPerMonth)||0;
               let progressHTML="";
-              if(cap>0 && cyStart){
+              if(cyStart){
                 const rawEarned=ruleRewardEarned(a.id, r.id, cyStart, cyEnd);
-                const earned=Math.min(rawEarned, cap);
-                const pct2=Math.min(100,Math.round(earned/cap*100));
-                const bc=pct2>=100?"var(--expense)":pct2>=70?"var(--adjust)":"var(--income)";
-                progressHTML=`<div style="display:flex;align-items:center;gap:5px;margin-top:2px">
-                  <div style="flex:1;height:3px;background:var(--line);border-radius:2px;overflow:hidden"><div style="width:${pct2}%;height:100%;background:${bc};border-radius:2px"></div></div>
-                  <span style="font-size:9px;font-weight:800;color:${bc};flex:none">${fmt(earned)}/${fmt(cap)}</span></div>`;
+                const earned=cap>0?Math.min(rawEarned, cap):rawEarned;
+                if(cap>0){
+                  const pct2=Math.min(100,Math.round(earned/cap*100));
+                  const bc=pct2>=100?"var(--expense)":pct2>=70?"var(--adjust)":"var(--income)";
+                  progressHTML=`<div style="display:flex;align-items:center;gap:5px;margin-top:2px">
+                    <div style="flex:1;height:3px;background:var(--line);border-radius:2px;overflow:hidden"><div style="width:${pct2}%;height:100%;background:${bc};border-radius:2px"></div></div>
+                    <span style="font-size:9px;font-weight:800;color:${bc};flex:none">${fmt(earned)}/${fmt(cap)}</span></div>`;
+                } else if(earned>0){
+                  progressHTML=`<div style="font-size:9.5px;font-weight:800;color:var(--income);margin-top:1px">本期 +${fmt(earned)}</div>`;
+                }
               }
               rwdLines+=`<div style="margin-top:3px">
                 <div style="font-size:10.5px;font-weight:700;color:var(--income)">🎁 ${escapeHtml(r.name)} ${r.rate}%${r.isBasic?' <span style="font-size:8px;background:var(--income);color:#fff;padding:1px 4px;border-radius:3px">基本</span>':""}</div>
                 ${progressHTML}</div>`;
             });
             html+=`<div class="cc-card-row">
-              ${c.imageUrl?`<img src="${escapeHtml(c.imageUrl)}" style="width:30px;height:19px;object-fit:contain;border-radius:3px;flex:none" onerror="this.outerHTML='<span class=cc-card-icon>💳</span>'">`:`<span class="cc-card-icon">💳</span>`}
+              <span class="cc-card-icon">💳</span>
               <div style="flex:1;min-width:0">
                 <div style="font-size:12.5px;font-weight:800;color:var(--ink)">${escapeHtml(c.name)}</div>
                 ${rwdLines}
@@ -1196,11 +1236,14 @@ function renderAccounts(){
           html+=`</div>`;
         } else {
           // ── Non-credit or credit without cards ──
-          const cycleRwd=isCredit?currentCycleReward(a):0;
-          const excludedBadge=a.includeInAssets===false?' <span class="tag-mini" style="color:var(--ink-3)">不計入資產</span>':"";          html+=`<button class="row" style="width:100%;text-align:left" data-acc="${a.id}">
+          const cycleRwd2=isCredit?currentCycleReward(a):0;
+          const excluded2=a.includeInAssets===false;
+          const exBadge2=excluded2?' <span class="tag-mini" style="color:var(--ink-3)">不計入資產</span>':"";
+          const exStyle2=excluded2?';opacity:.5':'';
+          html+=`<button class="row" style="width:100%;text-align:left${exStyle2}" data-acc="${a.id}">
             <div class="av" style="background:${a.color}">${a.icon||"💳"}</div>
-            <div><div class="nm">${escapeHtml(a.name)}${accCurrency(a)!=="TWD"?` <span class="tag-mini">${accCurrency(a)}</span>`:""}</div><div class="sub">點擊 · 調整／轉帳／明細${cycleRwd>0?` · 🎁本期+${moneyAcc(cycleRwd,a)}`:""}</div></div>
-            <div class="amt num ${bal<0?'neg':''}">${moneyAcc(bal,a)}</div></button>`;
+            <div><div class="nm">${escapeHtml(a.name)}${accCurrency(a)!=="TWD"?` <span class="tag-mini">${accCurrency(a)}</span>`:""}${exBadge2}</div><div class="sub">點擊 · 調整／轉帳／明細${cycleRwd2>0?` · 🎁本期+${moneyAcc(cycleRwd2,a)}`:""}</div></div>
+            <div class="amt num ${bal<0?'neg':''}"${excluded2?' style="color:var(--ink-3)"':''}>${moneyAcc(bal,a)}</div></button>`;
         }
       });
     });
@@ -1430,15 +1473,9 @@ function openCardStatements(id, back){
     const list=cycleTxns(id,cyc).sort((x,y)=> y.date<x.date?-1:y.date>x.date?1:y.ts-x.ts);
     const periodLabel=`${cyc.start.getMonth()+1}/${cyc.start.getDate()}–${cyc.end.getMonth()+1}/${cyc.end.getDate()}`;
     openSheet(`帳單明細 · ${periodLabel}`,
-      `<button class="btn ghost sm" id="backToStmt" style="margin-bottom:10px">‹ 返回帳單列表</button>
-      <div style="display:flex;gap:8px;margin-bottom:12px">
-        <button class="btn sm" id="cycAddExp" style="flex:1">＋ 新增消費</button>
-        <button class="btn sm ghost" id="cycAddRwd" style="flex:1;color:var(--income)">🎁 新增回饋</button>
-      </div>`+
+      `<button class="btn ghost sm" id="backToStmt" style="margin-bottom:12px">‹ 返回帳單列表</button>`+
       (list.length? list.map(t=>txnRowHTML(t)).join(""):`<div class="empty"><div class="ico">🗒️</div>此期間無交易</div>`));
     $("#backToStmt").onclick=()=>openCardStatements(id,back);
-    $("#cycAddExp").onclick=()=>openTxnSheet({type:"expense",accountId:id,date:dstr(cyc.start)});
-    $("#cycAddRwd").onclick=()=>openTxnSheet({type:"income",accountId:id,date:dstr(cyc.end)});
     bindTxnRows();
   });
   document.querySelectorAll("#sheetBody [data-recon]").forEach(b=>b.onclick=()=>{
@@ -1477,9 +1514,15 @@ function openCycleRecon(accountId, cyc, back){
   }).join("") : `<div class="empty"><div class="ico">🗒️</div>此期間無交易</div>`;
   openSheet(`逐筆對帳 · ${periodLabel}`,`
     <button class="btn ghost sm" id="reconBack" style="margin-bottom:10px">‹ 返回帳單列表</button>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <button class="btn sm" id="reconAddExp" style="flex:1">＋ 新增消費</button>
+      <button class="btn sm ghost" id="reconAddRwd" style="flex:1;color:var(--income)">🎁 新增回饋</button>
+    </div>
     <p class="muted" style="font-size:12px;margin:0 0 12px">已核對 ${doneCount} / ${txns.length} 筆。逐筆勾選代表已對過實際信用卡帳單；如果某筆其實該算在下一期帳單，可點「延後至下期」。</p>
     <div class="card tight">${rows}</div>`);
   $("#reconBack").onclick=()=>{ if(back) back(); else closeSheet(); };
+  if($("#reconAddExp")) $("#reconAddExp").onclick=()=>openTxnSheet({type:"expense",accountId,date:dstr(cyc.start)});
+  if($("#reconAddRwd")) $("#reconAddRwd").onclick=()=>openTxnSheet({type:"income",accountId,date:dstr(cyc.end)});
   document.querySelectorAll("#sheetBody [data-rtoggle]").forEach(b=>b.onclick=()=>{
     toggleTxnReconciled(b.dataset.rtoggle);
     syncCycleReconFlag(accountId, cyc);
@@ -1528,7 +1571,7 @@ function openAccountSheet(a, back){
   let includeInAssets=a.includeInAssets!==false;
   let autoPay=!!a.autoPay, autoPayAccountId=a.autoPayAccountId||null;
   let cards=(a.cards||[]).map(c=>({...c, rewards:(c.rewards||[]).map(r=>({...r}))}));
-  let keepInputs={ name:a.name, init:a.initial||0, foreignFee:a.foreignFeeRate||0, billDay:a.billingDay||1, dueDay:a.dueDay||10, cur:a.currency||"TWD" };
+  let keepInputs={ name:a.name, init:a.initial||0, foreignFee:ed?a.foreignFeeRate||0:(a.group==="credit"?1.5:0), billDay:a.billingDay||1, dueDay:a.dueDay||10, cur:a.currency||"TWD" };
 
   function bodyHTML(){
     const isCredit=group==="credit";
@@ -1614,15 +1657,13 @@ function openAccountSheet(a, back){
       return `
       <div style="margin-bottom:12px">
         <div style="display:flex;gap:8px;align-items:center">
-          ${c.imageUrl?`<img src="${escapeHtml(c.imageUrl)}" style="width:34px;height:22px;object-fit:contain;border-radius:4px;flex:none" onerror="this.style.display='none'">`:""}
+          
           <input class="input" data-cf="name" data-idx="${i}" placeholder="卡別名稱" value="${escapeHtml(c.name||"")}" style="flex:${limitMode==='perCard'?'1.4':'1'}">
           ${limitMode==="perCard"?`<input class="input num" data-cf="limit" data-idx="${i}" placeholder="額度" type="text" inputmode="decimal" value="${c.limit||""}" style="flex:1">`:""}
           <button class="icon-btn" data-crw="${i}" style="width:34px;height:34px;flex:none;font-size:14px" title="紅利回饋規則">🎁</button>
           <button class="icon-btn" data-cdel="${i}" style="width:34px;height:34px;flex:none;font-size:14px">✕</button>
         </div>
-        <div style="display:flex;gap:8px;align-items:center;margin-top:5px">
-          <input class="input" data-cf="imageUrl" data-idx="${i}" placeholder="卡面圖片網址（選填）" value="${escapeHtml(c.imageUrl||"")}" style="flex:1;font-size:11px">
-        </div>
+
         ${rwCount?`<div class="muted" style="font-size:11px;margin:4px 2px 0">已設定 ${rwCount} 條回饋規則</div>`:""}
       </div>`;
     }).join("") : `<p class="muted" style="font-size:12px;margin:4px 0">尚未新增卡別，預設視為單一卡別</p>`;
@@ -1652,7 +1693,10 @@ function openAccountSheet(a, back){
     if(apAcc) apAcc.addEventListener("change",()=>{ autoPayAccountId=apAcc.value||null; });
     $("#acGrp").querySelectorAll("[data-g]").forEach(el=>el.onclick=()=>{
       readInputs();
+      const prevGroup=group;
       group=el.dataset.g;
+      // Auto-fill 1.5% foreign fee when switching to credit
+      if(group==="credit" && prevGroup!=="credit" && !(parseFloat(keepInputs.foreignFee)>0)) keepInputs.foreignFee=1.5;
       reopen();
     });
     $("#acEmo").querySelectorAll(".em").forEach(el=>el.onclick=()=>{ icon=el.dataset.e; $("#acEmo").querySelectorAll(".em").forEach(x=>x.classList.toggle("on",x===el)); });
@@ -1673,9 +1717,9 @@ function openAccountSheet(a, back){
     const finalAutoPay = group==="credit"? autoPay : false;
     const finalAutoPayAccountId = (group==="credit"&&autoPay)? autoPayAccountId : null;
     if(ed){
-      Object.assign(acc(a.id),{name,icon,color,initial:init,group,currency,creditLimit,cards:cleanCards,limitMode:finalLimitMode,billingDay,dueDay,autoPay:finalAutoPay,autoPayAccountId:finalAutoPayAccountId,foreignFeeRate});
+      Object.assign(acc(a.id),{name,icon,color,initial:init,group,currency,creditLimit,cards:cleanCards,limitMode:finalLimitMode,billingDay,dueDay,autoPay:finalAutoPay,autoPayAccountId:finalAutoPayAccountId,foreignFeeRate,includeInAssets});
     }else{
-      S.accounts.push({id:uid(),name,icon,color,initial:init,order:S.accounts.length,group,currency,creditLimit,cards:cleanCards,limitMode:finalLimitMode,billingDay,dueDay,autoPay:finalAutoPay,autoPayAccountId:finalAutoPayAccountId,foreignFeeRate});
+      S.accounts.push({id:uid(),name,icon,color,initial:init,order:S.accounts.length,group,currency,creditLimit,cards:cleanCards,limitMode:finalLimitMode,billingDay,dueDay,autoPay:finalAutoPay,autoPayAccountId:finalAutoPayAccountId,foreignFeeRate,includeInAssets});
     }
     save();
     if(finalAutoPay) processCardAutoPay();

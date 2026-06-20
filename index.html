@@ -208,6 +208,12 @@ details summary{font-weight:800;font-size:13px;color:var(--brand-ink);cursor:poi
 .rw-list-meta{font-size:12px;font-weight:700;color:var(--income);margin-bottom:2px}
 .rw-list-date{font-size:11px;font-weight:700;color:var(--ink-2)}
 .rw-list-arrow{font-size:22px;font-weight:300;color:var(--ink-2);flex:none}
+.rw-list-wrap{display:flex;align-items:stretch;gap:6px;margin-bottom:10px}
+.rw-list-wrap .rw-list-item{margin-bottom:0}
+.rw-list-order{display:flex;flex-direction:column;gap:3px;justify-content:center}
+.rw-move{width:28px;height:24px;border:1.5px solid var(--line);border-radius:6px;background:var(--surface);font-size:10px;font-weight:800;color:var(--ink-2);cursor:pointer}
+.rw-move:disabled{opacity:.25;cursor:default}
+.rw-move:active:not(:disabled){background:var(--brand-bg);border-color:var(--brand)}
 
 /* ---------- Reward card (Moze-style) ---------- */
 .rw-row{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line);gap:10px}
@@ -256,9 +262,14 @@ details summary{font-weight:800;font-size:13px;color:var(--brand-ink);cursor:poi
 /* ============================================================
    記帳 MoneyBook
    ============================================================ */
-const VERSION = "1.19.1";
+const VERSION = "1.20.0";
 const SCHEMA = 13;
 const CHANGELOG = [
+  {v:"1.20.0", d:"2026-06-20", items:[
+    "月曆頁新增🔍搜尋按鈕，可搜尋備註/類別/帳戶關鍵字",
+    "搜尋條件面板：日期區間（預設/自訂）、金額範圍、記錄類型篩選、排序（日期/金額 升降序）",
+    "搜尋結果顯示筆數與金額統計，點擊直接編輯交易"
+  ]},
   {v:"1.19.0", d:"2026-06-20", items:[
     "帳戶新增「納入總資產」開關，設為不計入則不影響總資產與走勢圖",
     "信用卡帳單明細頁新增「＋新增消費」「🎁新增回饋」快捷按鈕，方便對帳時直接補記",
@@ -726,13 +737,12 @@ function totalAssets(){ return S.accounts.filter(a=>a.includeInAssets!==false).r
 function creditUsed(id){ const bal=accountBalance(id); return bal<0? -bal:0; }
 function cardOf(a,cardId){ return a&&Array.isArray(a.cards)? a.cards.find(c=>c.id===cardId):null; }
 function ruleRewardEarned(accountId, ruleId, startStr, endStr){
-  // Sum reward amounts from transactions linked to spending on this card that used this rule
   return Math.round(S.transactions.filter(t=>
     t.subType==="reward" && t.date>=startStr && t.date<=endStr &&
-    Array.isArray(t.linkedTxnIds) && t.linkedTxnIds.some(lid=>{
+    (t._ruleId===ruleId || (Array.isArray(t.linkedTxnIds) && t.linkedTxnIds.some(lid=>{
       const p=S.transactions.find(x=>x.id===lid);
       return p && p.accountId===accountId && Array.isArray(p.selectedRewardIds) && p.selectedRewardIds.includes(ruleId);
-    })
+    })))
   ).reduce((s,t)=>s+t.amount,0)*100)/100;
 }
 function accountRewardInPeriod(accountId, startStr, endStr){
@@ -813,10 +823,11 @@ function computeRewardEstimate(card, selectedRewardId, finalAmount, accountId){
       const cy=listRecentCycles(a2,1);
       if(cy.length){
         cycleStart=dstr(cy[0].start); cycleEnd=dstr(cy[0].end);
-        // Sum all expenses in this cycle for this account (excluding current unsaved tx)
+        // Sum expenses in this cycle that selected this specific rule
         cycleSpending=S.transactions.filter(t=>
           t.type==="expense" && !t.subType && t.accountId===accountId &&
-          t.date>=cycleStart && t.date<=cycleEnd
+          t.date>=cycleStart && t.date<=cycleEnd &&
+          Array.isArray(t.selectedRewardIds) && t.selectedRewardIds.includes(rule.id)
         ).reduce((s,t)=>s+t.amount,0);
       }
     }
@@ -1109,9 +1120,11 @@ function renderAppbar(){
     bar.innerHTML=`
       <button id="abTitle" class="ab-title"><b>${y}年 ${m+1}月 ▾</b><i>今日 ${tdLabel}・點標題回今天、長按選月</i></button>
       <button class="cal-nav" id="abPrev">‹</button>
-      <button class="cal-nav" id="abNext">›</button>`;
+      <button class="cal-nav" id="abNext">›</button>
+      <button class="cal-nav" id="abSearch" style="font-size:16px" title="搜尋">🔍</button>`;
     $("#abPrev").onclick=()=>shiftMonth(-1);
     $("#abNext").onclick=()=>shiftMonth(1);
+    if($("#abSearch")) $("#abSearch").onclick=openSearchSheet;
     const tt=$("#abTitle");
     tt.onclick=()=>{ calRef=new Date(); calRef.setDate(1); calSel=todayStr(); renderCalendar(); };
     onLongPress(tt, openMonthPicker);
@@ -1217,20 +1230,24 @@ function renderAccounts(){
                     <div style="flex:1;height:3px;background:var(--line);border-radius:2px;overflow:hidden"><div style="width:${pct2}%;height:100%;background:${bc};border-radius:2px"></div></div>
                     <span style="font-size:9px;font-weight:800;color:${bc};flex:none">${fmt(earned)}/${fmt(cap)}</span></div>`;
                 } else if(earned>0){
-                  progressHTML=`<div style="font-size:9.5px;font-weight:800;color:var(--income);margin-top:1px">本期 +${fmt(earned)}</div>`;
+                  progressHTML=`<div style="display:flex;align-items:center;gap:5px;margin-top:2px">
+                    <div style="flex:1;height:3px;background:var(--line);border-radius:2px;overflow:hidden"><div style="width:100%;height:100%;background:var(--income);border-radius:2px"></div></div>
+                    <span style="font-size:9px;font-weight:800;color:var(--income);flex:none">${fmt(earned)}/∞</span></div>`;
                 }
               }
-              rwdLines+=`<div style="margin-top:3px">
+              rwdLines+=`<button class="rw-detail-btn" data-rwdetail="${a.id}|${r.id}|${cyStart}|${cyEnd}" style="margin-top:3px;width:100%;text-align:left;background:none;border:none;padding:2px 0;cursor:pointer">
                 <div style="font-size:10.5px;font-weight:700;color:var(--income)">🎁 ${escapeHtml(r.name)} ${r.rate}%${r.isBasic?' <span style="font-size:8px;background:var(--income);color:#fff;padding:1px 4px;border-radius:3px">基本</span>':""}</div>
-                ${progressHTML}</div>`;
+                ${progressHTML}</button>`;
             });
-            html+=`<div class="cc-card-row">
-              <span class="cc-card-icon">💳</span>
+            html+=`<div class="cc-card-row" style="align-items:flex-start">
+              <span class="cc-card-icon" style="margin-top:2px">💳</span>
               <div style="flex:1;min-width:0">
-                <div style="font-size:12.5px;font-weight:800;color:var(--ink)">${escapeHtml(c.name)}</div>
+                <div style="display:flex;align-items:center;gap:6px">
+                  <span style="font-size:12.5px;font-weight:800;color:var(--ink);flex:1">${escapeHtml(c.name)}</span>
+                  <span class="num" style="font-size:12px;font-weight:800;color:var(--ink-2);flex:none">${moneyAcc(cu,a)}</span>
+                </div>
                 ${rwdLines}
               </div>
-              <span class="num" style="font-size:12px;font-weight:800;color:var(--ink-2);flex:none">${moneyAcc(cu,a)}</span>
             </div>`;
           });
           html+=`</div>`;
@@ -1253,7 +1270,72 @@ function renderAccounts(){
   view.querySelectorAll("[data-r]").forEach(b=>b.onclick=()=>{ assetRange=b.dataset.r; renderAccounts(); });
   $("#addAcc").onclick=()=>openAccountSheet();
   view.querySelectorAll("[data-acc]").forEach(b=>b.onclick=()=>openAccountActions(b.dataset.acc));
+  view.querySelectorAll("[data-rwdetail]").forEach(b=>{
+    b.onclick=(e)=>{
+      e.stopPropagation();
+      const [accId,ruleId,start,end]=b.dataset.rwdetail.split("|");
+      openRewardDetailView(accId,ruleId,start,end);
+    };
+  });
   drawAssetChart();
+}
+function openRewardDetailView(accountId,ruleId,startStr,endStr){
+  const a2=acc(accountId); if(!a2) return;
+  let rule=null;
+  (a2.cards||[]).forEach(c=>(c.rewards||[]).forEach(r=>{ if(r.id===ruleId) rule=r; }));
+  if(!rule) return;
+  // Find source expenses that selected this rule
+  const expenses=S.transactions.filter(t=>
+    t.type==="expense" && !t.subType && t.accountId===accountId &&
+    t.date>=startStr && t.date<=endStr &&
+    Array.isArray(t.selectedRewardIds) && t.selectedRewardIds.includes(ruleId)
+  ).sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:b.ts-a.ts);
+  // Find reward transactions linked to these expenses
+  const expIds=new Set(expenses.map(t=>t.id));
+  const rewards=S.transactions.filter(t=>
+    t.subType==="reward" && t.date>=startStr && t.date<=endStr &&
+    (t._ruleId===ruleId || (Array.isArray(t.linkedTxnIds) && t.linkedTxnIds.some(lid=>expIds.has(lid)) && !t._ruleId))
+  ).filter(t=>!t._ruleId || t._ruleId===ruleId);
+  const totalSpent=expenses.reduce((s,t)=>s+t.amount,0);
+  const totalRwd=rewards.reduce((s,t)=>s+t.amount,0);
+  const cap=parseFloat(rule.maxRewardPerMonth)||0;
+  const cappedRwd=cap>0?Math.min(totalRwd,cap):totalRwd;
+
+  let html=`<div style="margin-bottom:14px">
+    <div style="font-size:13px;font-weight:800;color:var(--ink);margin-bottom:6px">🎁 ${escapeHtml(rule.name)} ${rule.rate}%${rule.isBasic?' <span style="font-size:9px;background:var(--income);color:#fff;padding:2px 6px;border-radius:4px">基本回饋</span>':""}</div>
+    <div style="display:flex;gap:16px;font-size:12.5px;font-weight:800">
+      <div>消費筆數 <span style="color:var(--ink)">${expenses.length}</span></div>
+      <div>消費金額 <span style="color:var(--expense)">${fmt(totalSpent)}</span></div>
+      <div>已回饋 <span style="color:var(--income)">${fmt(cappedRwd)}${cap>0?"/"+fmt(cap):"/∞"}</span></div>
+    </div>
+  </div>
+  <div class="rw-group-hdr">消費來源（${expenses.length} 筆）</div>`;
+  if(expenses.length){
+    html+=expenses.map(t=>{
+      const c2=cat(t.categoryId); const icon=c2?c2.icon:"📦"; const title=t.note||c2?.name||"消費";
+      const d=parseD(t.date);
+      return `<button class="row txn-row" style="width:100%;text-align:left" data-txn="${t.id}">
+        <div class="av" style="width:32px;height:32px;font-size:14px;border-radius:9px;background:${c2?.color||"var(--surface-2)"}">${icon}</div>
+        <div style="min-width:0"><div class="nm" style="font-size:13px">${escapeHtml(title)}</div>
+          <div class="sub">${d.getMonth()+1}/${d.getDate()}</div></div>
+        <div class="amt num neg" style="text-align:right;font-size:13px">-${fmt(t.amount)}</div></button>`;
+    }).join("");
+  } else {
+    html+=`<p class="muted" style="font-size:12px;padding:8px 0">本期無消費使用此方案</p>`;
+  }
+  if(rewards.length){
+    html+=`<div class="rw-group-hdr" style="margin-top:10px">回饋交易（${rewards.length} 筆）</div>`;
+    html+=rewards.map(t=>{
+      const ra=acc(t.accountId);
+      return `<button class="row txn-row" style="width:100%;text-align:left" data-txn="${t.id}">
+        <div class="av" style="width:32px;height:32px;font-size:14px;border-radius:9px;background:var(--income)">🎁</div>
+        <div style="min-width:0"><div class="nm" style="font-size:13px">${escapeHtml(t.note||"回饋")}</div>
+          <div class="sub">${parseD(t.date).getMonth()+1}/${parseD(t.date).getDate()} → ${ra?escapeHtml(ra.name):""}</div></div>
+        <div class="amt num" style="text-align:right;font-size:13px;color:var(--income)">+${fmt(t.amount)}</div></button>`;
+    }).join("");
+  }
+  openSheet(`🎁 ${escapeHtml(rule.name)} 回饋明細`, html);
+  bindTxnRows();
 }
 function buildAssetSeries(){
   const today=new Date(); today.setHours(0,0,0,0); let pts=[];
@@ -1784,7 +1866,12 @@ function openCardRewardsSheet(card, back){
             }
           }
         }
-        html+=`<button class="rw-list-item" data-rwopen="${i}">
+        html+=`<div class="rw-list-wrap">
+          <div class="rw-list-order">
+            <button class="rw-move" data-rwup="${i}" ${active.indexOf(r)===0?'disabled':''}>▲</button>
+            <button class="rw-move" data-rwdn="${i}" ${active.indexOf(r)===active.length-1?'disabled':''}>▼</button>
+          </div>
+          <button class="rw-list-item" data-rwopen="${i}" style="flex:1">
           <div class="rw-list-left">
             <div class="rw-list-name">${escapeHtml(r.name)}${r.isBasic?' <span class="chip" style="background:var(--income);color:#fff;font-size:9px;padding:2px 7px;vertical-align:middle">基本回饋</span>':""}</div>
             <div class="rw-list-meta">${r.rate}%　|　${capLabel(r)}</div>
@@ -1792,7 +1879,7 @@ function openCardRewardsSheet(card, back){
             ${usageHTML}
           </div>
           <span class="rw-list-arrow">›</span>
-        </button>`;
+        </button></div>`;
       });
     } else {
       html+=`<p class="muted" style="font-size:12.5px;margin:4px 0 16px;padding-left:4px">尚未設定回饋方案</p>`;
@@ -1824,6 +1911,14 @@ function openCardRewardsSheet(card, back){
     document.querySelectorAll("#sheetBody [data-rwopen]").forEach(b=>b.onclick=()=>{
       const i=+b.dataset.rwopen;
       if(card.rewards[i]) showDetail(i);
+    });
+    document.querySelectorAll("#sheetBody [data-rwup]").forEach(b=>b.onclick=(e)=>{
+      e.stopPropagation(); const i=+b.dataset.rwup;
+      if(i>0){ [card.rewards[i-1],card.rewards[i]]=[card.rewards[i],card.rewards[i-1]]; save(); showList(); }
+    });
+    document.querySelectorAll("#sheetBody [data-rwdn]").forEach(b=>b.onclick=(e)=>{
+      e.stopPropagation(); const i=+b.dataset.rwdn;
+      if(i<card.rewards.length-1){ [card.rewards[i],card.rewards[i+1]]=[card.rewards[i+1],card.rewards[i]]; save(); showList(); }
     });
     if($("#addRwBtn")) $("#addRwBtn").onclick=()=>{
       card.rewards=card.rewards||[];
@@ -2072,6 +2167,149 @@ function monthGridHTML(refY,refM){
   }
   return `<div class="cal-month">${cells}</div>`;
 }
+/* ---------- 交易搜尋 ---------- */
+function openSearchSheet(){
+  let filters={keyword:"",type:"",dateFrom:"",dateTo:"",datePreset:"all",amountMin:"",amountMax:"",sortBy:"date",sortDir:"desc"};
+
+  function doSearch(){
+    let results=[...S.transactions].filter(t=>!t.subType);
+    // Keyword
+    const kw=filters.keyword.trim().toLowerCase();
+    if(kw){
+      results=results.filter(t=>{
+        const note=(t.note||"").toLowerCase();
+        const c=cat(t.categoryId); const cname=c?(c.name||"").toLowerCase():"";
+        const a2=acc(t.accountId); const aname=a2?(a2.name||"").toLowerCase():"";
+        const tags=(t.tagIds||[]).map(id=>{const tg=S.tags.find(x=>x.id===id);return tg?(tg.name||"").toLowerCase():"";}).join(" ");
+        return note.includes(kw)||cname.includes(kw)||aname.includes(kw)||tags.includes(kw);
+      });
+    }
+    // Type
+    if(filters.type) results=results.filter(t=>t.type===filters.type);
+    // Date range
+    if(filters.datePreset==="1w"){ const d=new Date(); d.setDate(d.getDate()-7); filters.dateFrom=dstr(d); filters.dateTo=todayStr(); }
+    else if(filters.datePreset==="1m"){ const d=new Date(); d.setMonth(d.getMonth()-1); filters.dateFrom=dstr(d); filters.dateTo=todayStr(); }
+    else if(filters.datePreset==="3m"){ const d=new Date(); d.setMonth(d.getMonth()-3); filters.dateFrom=dstr(d); filters.dateTo=todayStr(); }
+    if(filters.dateFrom) results=results.filter(t=>t.date>=filters.dateFrom);
+    if(filters.dateTo) results=results.filter(t=>t.date<=filters.dateTo);
+    // Amount
+    const amin=parseFloat(filters.amountMin)||0;
+    const amax=parseFloat(filters.amountMax)||0;
+    if(amin>0) results=results.filter(t=>t.amount>=amin);
+    if(amax>0) results=results.filter(t=>t.amount<=amax);
+    // Sort
+    if(filters.sortBy==="amount"){
+      results.sort((a,b)=>filters.sortDir==="asc"?a.amount-b.amount:b.amount-a.amount);
+    } else {
+      results.sort((a,b)=>filters.sortDir==="asc"?(a.date<b.date?-1:a.date>b.date?1:a.ts-b.ts):(a.date>b.date?-1:a.date<b.date?1:b.ts-a.ts));
+    }
+    return results;
+  }
+
+  function renderSearch(){
+    const results=doSearch();
+    const totalExp=results.filter(t=>t.type==="expense").reduce((s,t)=>s+t.amount,0);
+    const totalInc=results.filter(t=>t.type==="income").reduce((s,t)=>s+t.amount,0);
+
+    let html=`
+    <div style="position:relative;margin-bottom:12px">
+      <input class="input" id="srchKw" type="search" placeholder="🔍 搜尋備註、類別、帳戶..." value="${escapeHtml(filters.keyword)}" style="font-size:14px;padding-left:12px">
+    </div>
+    <button class="btn ghost sm" id="srchFilter" style="margin-bottom:10px">⚙ 搜尋條件</button>
+    <div style="font-size:12px;font-weight:800;color:var(--ink-2);margin-bottom:10px">
+      共 ${results.length} 筆
+      ${totalExp?` · <span style="color:var(--expense)">支出 ${fmt(totalExp)}</span>`:""}
+      ${totalInc?` · <span style="color:var(--income)">收入 ${fmt(totalInc)}</span>`:""}
+    </div>
+    <div id="srchResults">${results.length?results.slice(0,50).map(t=>txnRowHTML(t,false,true)).join(""):`<div class="empty"><div class="ico">🔍</div>無搜尋結果</div>`}</div>
+    ${results.length>50?`<p class="muted" style="font-size:11px;text-align:center;margin-top:8px">僅顯示前 50 筆</p>`:""}`;
+
+    openSheet("🔍 搜尋交易", html);
+
+    // Bind keyword input (debounced)
+    const kwInput=document.getElementById("srchKw");
+    if(kwInput){
+      kwInput.focus();
+      let debounce;
+      kwInput.addEventListener("input",()=>{
+        clearTimeout(debounce);
+        debounce=setTimeout(()=>{ filters.keyword=kwInput.value; renderSearch(); },300);
+      });
+    }
+    // Bind filter button
+    if($("#srchFilter")) $("#srchFilter").onclick=()=>openFilterSheet();
+    bindTxnRows();
+  }
+
+  function openFilterSheet(){
+    const typeOpts=[{v:"",l:"全部"},{v:"expense",l:"支出"},{v:"income",l:"收入"},{v:"transfer",l:"轉帳"}];
+    const presetOpts=[{v:"all",l:"不限"},{v:"1w",l:"最近一週"},{v:"1m",l:"最近一個月"},{v:"3m",l:"最近三個月"}];
+
+    let fhtml=`
+    <div class="fld"><span class="lb">日期區間</span>
+      <div class="pick-grid" id="fDatePreset">${presetOpts.map(o=>`<button class="pick ${filters.datePreset===o.v?'on':''}" data-dp="${o.v}">${o.l}</button>`).join("")}</div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <input class="input" id="fDateFrom" type="date" value="${filters.dateFrom}" style="flex:1">
+        <span style="align-self:center;font-weight:800">—</span>
+        <input class="input" id="fDateTo" type="date" value="${filters.dateTo}" style="flex:1">
+      </div>
+    </div>
+    <div class="fld"><span class="lb">金額範圍</span>
+      <div style="display:flex;gap:8px">
+        <input class="input num" id="fAmtMin" placeholder="下限" type="text" inputmode="decimal" value="${filters.amountMin}" style="flex:1">
+        <span style="align-self:center;font-weight:800">—</span>
+        <input class="input num" id="fAmtMax" placeholder="上限" type="text" inputmode="decimal" value="${filters.amountMax}" style="flex:1">
+      </div>
+    </div>
+    <div class="fld"><span class="lb">記錄類型</span>
+      <div class="pick-grid" id="fType">${typeOpts.map(o=>`<button class="pick ${filters.type===o.v?'on':''}" data-ft="${o.v}">${o.l}</button>`).join("")}</div>
+    </div>
+    <div class="fld"><span class="lb">排序</span>
+      <div style="display:flex;gap:8px">
+        <button class="pick ${filters.sortBy==='date'?'on':''}" data-fs="date" style="flex:1">依日期</button>
+        <button class="pick ${filters.sortBy==='amount'?'on':''}" data-fs="amount" style="flex:1">依金額</button>
+        <button class="pick ${filters.sortDir==='desc'?'on':''}" data-fd="toggle" style="flex:none;width:44px">${filters.sortDir==="desc"?"▼":"▲"}</button>
+      </div>
+    </div>
+    <button class="btn ghost sm" id="fReset" style="margin-top:10px;color:var(--ink-3)">重置條件</button>`;
+
+    openSheet("⚙ 搜尋條件", fhtml, {actionLabel:"套用", onAction:()=>{
+      // Read filter values
+      filters.dateFrom=document.getElementById("fDateFrom")?.value||"";
+      filters.dateTo=document.getElementById("fDateTo")?.value||"";
+      filters.amountMin=document.getElementById("fAmtMin")?.value||"";
+      filters.amountMax=document.getElementById("fAmtMax")?.value||"";
+      renderSearch();
+    }});
+
+    // Bind filter toggles
+    document.querySelectorAll("#sheetBody [data-dp]").forEach(b=>b.onclick=()=>{
+      filters.datePreset=b.dataset.dp;
+      if(filters.datePreset!=="all"){ filters.dateFrom=""; filters.dateTo=""; }
+      document.querySelectorAll("#sheetBody [data-dp]").forEach(x=>x.classList.toggle("on",x===b));
+    });
+    document.querySelectorAll("#sheetBody [data-ft]").forEach(b=>b.onclick=()=>{
+      filters.type=b.dataset.ft;
+      document.querySelectorAll("#sheetBody [data-ft]").forEach(x=>x.classList.toggle("on",x===b));
+    });
+    document.querySelectorAll("#sheetBody [data-fs]").forEach(b=>b.onclick=()=>{
+      filters.sortBy=b.dataset.fs;
+      document.querySelectorAll("#sheetBody [data-fs]").forEach(x=>x.classList.toggle("on",x===b));
+    });
+    document.querySelectorAll("#sheetBody [data-fd]").forEach(b=>b.onclick=()=>{
+      filters.sortDir=filters.sortDir==="desc"?"asc":"desc";
+      b.textContent=filters.sortDir==="desc"?"▼":"▲";
+      b.classList.add("on");
+    });
+    if($("#fReset")) $("#fReset").onclick=()=>{
+      filters={keyword:filters.keyword,type:"",dateFrom:"",dateTo:"",datePreset:"all",amountMin:"",amountMax:"",sortBy:"date",sortDir:"desc"};
+      renderSearch();
+    };
+  }
+
+  renderSearch();
+}
+
 function renderCalendar(){
   renderAppbar();
   const y=calRef.getFullYear(),m=calRef.getMonth();
@@ -3024,20 +3262,59 @@ function openTxnSheet(opts){
       });
     }
 
-    // ── Reward linked transactions (one per selected plan with an account) ──
+    // ── Reward linked transactions ──
     rewardEstimates.forEach(re=>{
       if(!re.accountId || !acc(re.accountId)) return;
-      const rwId=uid();
-      const rule=rewardRulesForCard(cardOf(acc(model.accountId),model.cardId)).find(r=>r.id===re.ruleId);
-      const rwRec={
-        id:rwId, type:"income", subType:"reward",
-        amount:re.amount, accountId:re.accountId,
-        date:txDate, note:`回饋（${rule?rule.name:""}）：${model.note||cat(model.categoryId)?.name||"消費"}`,
-        tagIds:[], ts:Date.now(), linkedTxnIds:[mainId],
-        categoryId:null, cardId:null, projectId:null
-      };
-      S.transactions.push(rwRec);
-      linkedIds.push(rwId);
+      const card3=cardOf(acc(model.accountId),model.cardId);
+      const rule=card3?rewardRulesForCard(card3).find(r=>r.id===re.ruleId):null;
+      const isMonthly=rule&&(rule.calcBasis||"monthly")==="monthly";
+
+      if(isMonthly && model.accountId){
+        // ── Monthly mode: find existing cycle reward txn for this rule, update or create ──
+        const a3=acc(model.accountId);
+        const cy3=a3?listRecentCycles(a3,1):[];
+        const cyS=cy3.length?dstr(cy3[0].start):"";
+        const cyE=cy3.length?dstr(cy3[0].end):"";
+        // Find existing single reward txn for this rule in this cycle
+        const existing=cyS?S.transactions.find(t=>
+          t.subType==="reward" && t._ruleId===re.ruleId &&
+          t.date>=cyS && t.date<=cyE
+        ):null;
+        if(existing){
+          // Update amount to new cycle total
+          const totalCycleReward=re.amount + ruleRewardEarned(model.accountId, re.ruleId, cyS, cyE);
+          const cap2=parseFloat(rule.maxRewardPerMonth)||0;
+          existing.amount=cap2>0?Math.min(totalCycleReward,cap2):totalCycleReward;
+          existing.note=`回饋（${rule.name}）：本期合計`;
+          // Link both ways
+          if(!existing.linkedTxnIds.includes(mainId)) existing.linkedTxnIds.push(mainId);
+          linkedIds.push(existing.id);
+        } else {
+          // Create new single cycle reward txn
+          const rwId=uid();
+          const rwRec={
+            id:rwId, type:"income", subType:"reward", _ruleId:re.ruleId,
+            amount:re.amount, accountId:re.accountId,
+            date:txDate, note:`回饋（${rule?rule.name:""}）：本期合計`,
+            tagIds:[], ts:Date.now(), linkedTxnIds:[mainId],
+            categoryId:null, cardId:null, projectId:null
+          };
+          S.transactions.push(rwRec);
+          linkedIds.push(rwId);
+        }
+      } else {
+        // ── Per-tx mode: create individual reward txn ──
+        const rwId=uid();
+        const rwRec={
+          id:rwId, type:"income", subType:"reward",
+          amount:re.amount, accountId:re.accountId,
+          date:txDate, note:`回饋（${rule?rule.name:""}）：${model.note||cat(model.categoryId)?.name||"消費"}`,
+          tagIds:[], ts:Date.now(), linkedTxnIds:[mainId],
+          categoryId:null, cardId:null, projectId:null
+        };
+        S.transactions.push(rwRec);
+        linkedIds.push(rwId);
+      }
     });
 
     // ── Main transaction ──
